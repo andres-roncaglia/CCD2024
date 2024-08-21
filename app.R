@@ -84,8 +84,12 @@ Pobreza <- prep(Pobreza) |> arrange(Pais)
 Salud <- prep(Salud) |> arrange(Pais)
 Trabajo <- prep(Trabajo) |> arrange(Pais)
 
+
+# Analisis de componentes principales -----------------------
+
 library(FactoMineR)
 
+## Preparacion de los datos para ACP -------------------
 datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Salud, Trabajo) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
@@ -96,26 +100,69 @@ datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, S
   select(where(~ sum(is.na(.)) < 3)) |> 
   select(where(~ !all(is.na(.)))) # Elimino las columnas con NA
 
+
+# Analisis de componentes principales
 acp <- PCA(X = select_if(datos_acp, is.numeric) , scale.unit = T, graph = F, ncp = Inf)
 
-jugadores <- acp$ind$coord %>% 
-  bind_cols(datos_acp) %>%
-  select(Pais, Dim.1, Dim.2) %>% 
+
+## Grafico aporte de las componentes principales ----------------------
+as.data.frame(acp$eig) |>
+  mutate(color = case_when(`cumulative percentage of variance` < 85 ~ "Menor al 85%",
+                           T ~ "Mayor al 85%")) |> 
+  ggplot(aes(x = 1:nrow(acp$eig), y = `percentage of variance`, color = color)) +
+  geom_line(color = "black") +
+  geom_point(size = 3) +
+  xlab("Componente principal") +
+  ylab("Variancia explicada por la componente (%)") +
+  scale_x_continuous(breaks = 1:nrow(acp$eig)) +
+  scale_color_manual(values = c("Menor al 85%" = "forestgreen", "Mayor al 85%" = "firebrick3"),
+                     breaks = c("Menor al 85%", "Mayor al 85%")) +
+  labs(color = "Porcentaje acumulado de la variancia") +
+  theme(legend.position = "bottom")
+
+
+# Analisis Cluster con las componentes principales ---------------------------
+
+# Cantidad de componentes con las que trabajar
+
+num_cp <- length(which(acp$eig[,"cumulative percentage of variance"] < 85))
+
+variables_componentes <- acp$ind$coord[,1:num_cp]
+
+datos_cluster <- datos_acp |> 
+  select(Pais, Codigo) |> 
+  bind_cols(variables_componentes) |> 
+  mutate_if(is.numeric, scale)
+
+
+# Matriz de distancias
+d <- datos_cluster |> 
+  select_if(is.numeric) |> 
+  dist(method = "euclidean")
+
+## Analisis cluster ---------
+fit <- hclust(d, method="ward.D")
+
+# Cantidad de grupos
+groups <- cutree(fit, k=4)
+
+datos_cluster <- datos_cluster |> 
+  mutate(Grupo = as.factor(groups))
+
+# Grafico clusters ----------------
+
+graf_acp <- acp$ind$coord |> 
+  bind_cols(datos_acp, Grupo = datos_cluster$Grupo) |> 
+  select(Pais, Dim.1, Dim.2, Grupo) |> 
   ggplot() +
-  aes(x = Dim.1, y = Dim.2, label = Pais, color = Pais) +
+  aes(x = Dim.1, y = Dim.2, label = Pais, color = Grupo) +  # Usa color según el grupo
   geom_hline(yintercept = 0, linewidth= 0.1) +
   geom_vline(xintercept = 0, linewidth= 0.1) +
   geom_point(alpha = 0.80, size = 3) +
-  theme_bw()
+  labs(color = "Grupo", fill = "Grupo")
 
-ggplotly(jugadores)
+graf_acp <- ggplotly(graf_acp, tooltip = c("Pais", "Grupo", "x", "y"))
 
-acp$eig |> ggplot(aes(x = 1:nrow(acp$eig), y = `percentage of variance`)) +
-  geom_point() +
-  geom_line() +
-  xlab("Componente principal") +
-  ylab("Variancia explicada por la componente (%)") +
-  scale_x_continuous(breaks = 1:nrow(acp$eig))
 
 # Mapa de sudamerica ----------------
 library(leaflet)
