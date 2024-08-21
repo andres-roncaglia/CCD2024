@@ -97,8 +97,7 @@ datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, S
               values_from = Valor,
               values_fill = list(Valor = NA)) |> 
   select(!Año) |> 
-  select(where(~ sum(is.na(.)) < 3)) |> 
-  select(where(~ !all(is.na(.)))) # Elimino las columnas con NA
+  select(where(~ sum(is.na(.)) < 3)) # Excluyo las variables con pocos datos
 
 
 # Analisis de componentes principales
@@ -106,7 +105,7 @@ acp <- PCA(X = select_if(datos_acp, is.numeric) , scale.unit = T, graph = F, ncp
 
 
 ## Grafico aporte de las componentes principales ----------------------
-as.data.frame(acp$eig) |>
+graf_aporte_cp <- as.data.frame(acp$eig) |>
   mutate(color = case_when(`cumulative percentage of variance` < 85 ~ "Menor al 85%",
                            T ~ "Mayor al 85%")) |> 
   ggplot(aes(x = 1:nrow(acp$eig), y = `percentage of variance`, color = color)) +
@@ -149,19 +148,6 @@ groups <- cutree(fit, k=4)
 datos_cluster <- datos_cluster |> 
   mutate(Grupo = as.factor(groups))
 
-# Grafico clusters ----------------
-
-graf_acp <- acp$ind$coord |> 
-  bind_cols(datos_acp, Grupo = datos_cluster$Grupo) |> 
-  select(Pais, Dim.1, Dim.2, Grupo) |> 
-  ggplot() +
-  aes(x = Dim.1, y = Dim.2, label = Pais, color = Grupo) +  # Usa color según el grupo
-  geom_hline(yintercept = 0, linewidth= 0.1) +
-  geom_vline(xintercept = 0, linewidth= 0.1) +
-  geom_point(alpha = 0.80, size = 3) +
-  labs(color = "Grupo", fill = "Grupo")
-
-graf_acp <- ggplotly(graf_acp, tooltip = c("Pais", "Grupo", "x", "y"))
 
 
 # Mapa de sudamerica ----------------
@@ -201,7 +187,8 @@ ui <- dashboardPage(
                      menuItem("Poblacion", tabName = "poblacion", icon = icon("users")),
                      menuItem("Pobreza", tabName = "pobreza", icon = icon("person-shelter")),
                      menuItem("Salud", tabName = "salud", icon = icon("heart-pulse")),
-                     menuItem("Trabajo", tabName = "trabajo", icon = icon("briefcase"))
+                     menuItem("Trabajo", tabName = "trabajo", icon = icon("briefcase")),
+                     menuItem("Análisis de datos", tabName = "analisis", icon = icon("magnifying-glass-chart"))
                      )
                    ),
   
@@ -252,7 +239,7 @@ ui <- dashboardPage(
         ## Tercera hilera de botones ---------------------
         fluidRow(
           column(3,
-                 actionBttn("go_to_details", "Go to Detailed Page", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
                  actionBttn("go_to_details", "Go to Detailed Page", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
@@ -290,8 +277,7 @@ ui <- dashboardPage(
         
         fluidRow(
           column(7,
-                 plotlyOutput("plot_evo_ciencia")
-                 ),
+                 plotlyOutput("plot_evo_ciencia")),
           
           column(5,
                  leafletOutput("mapa_ciencia", width = "100%", height = "400px")
@@ -300,7 +286,83 @@ ui <- dashboardPage(
         
         
         
+        ),
+      
+      # Pagina Analisis de datos ------------------
+      
+      tabItem(
+        tabName = "analisis",
+        h2("Analisis de datos"), br(),
+        h4("Componentes principales y clustering"), br(),
+        
+        fluidRow(
+          column(7,
+                 plotlyOutput("plot_corr")),
+          column(5,
+                 fluidRow(
+                   pickerInput(inputId = "var_corr_1", label = "Variable eje x", choices = list(
+                     Ciencia = unique(Ciencia$Indicador), 
+                     Vida = unique(Vida$Indicador), 
+                     Economia = unique(Economia$Indicador), 
+                     Educacion = unique(Educacion$Indicador), 
+                     Poblacion = unique(Poblacion$Indicador), 
+                     Pobreza = unique(Pobreza$Indicador), 
+                     Salud = unique(Salud$Indicador), 
+                     Trabajo = unique(Trabajo$Indicador)
+                   ), selected = "Access to internet, percent of population",
+                   options = list(
+                     `live-search` = TRUE,
+                     size = 7))
+                 ),
+                 fluidRow(
+                   pickerInput(inputId = "var_corr_2", label = "Variable eje y", choices = list(
+                     Ciencia = unique(Ciencia$Indicador),
+                     Vida = unique(Vida$Indicador),
+                     Economia = unique(Economia$Indicador),
+                     Educacion = unique(Educacion$Indicador),
+                     Poblacion = unique(Poblacion$Indicador),
+                     Pobreza = unique(Pobreza$Indicador),
+                     Salud = unique(Salud$Indicador),
+                     Trabajo = unique(Trabajo$Indicador)
+                   ), selected = "Economic Inequality Score",
+                   options = list(
+                     `live-search` = TRUE,
+                     size = 7))
+                 ), br(),
+                 fluidRow(
+                   sliderInput(inputId = "anio_corr",
+                               label = "Año",
+                               min = 1960,
+                               max = 2022,
+                               value = 2022
+                   )
+                 )
+                 )
+        ),
+        
+        fluidRow(
+          column(7,
+                 plotOutput("graf_aporte_cp")),
+          
+          column(5,
+                 #tabla con las 5 componentes mas fuertes
+                 )
+        ),
+        br(),
+        fluidRow(
+          column(9,
+                 plotlyOutput("graf_acp")),
+          
+          column(3, 
+                 fluidRow(
+                   pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[3])
+                   ),
+                 fluidRow(
+                   pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[4])
+                 ))
         )
+      )
+      
     )
   )
 )
@@ -343,6 +405,10 @@ server <- function(input, output, session) {
     updateTabItems(session, "sidebar", selected = "trabajo")
   })
   
+  observeEvent(input$analisis, {
+    updateTabItems(session, "sidebar", selected = "analisis")
+  })
+  
   observeEvent(input$github, {
     browseURL("https://github.com/andres-roncaglia/CCD2024")
   })
@@ -364,48 +430,6 @@ server <- function(input, output, session) {
     ggplotly(graf)
   })
 
-  
-  ### Grafico correlaciones ----------------
-  
-  output$plot_corr <- renderPlotly({
-    
-    if (input$var_corr_2 %in% Ciencia$Indicador) {
-      datos_corr = filter(Ciencia, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Vida$Indicador) {
-      datos_corr = filter(Vida, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Economia$Indicador) {
-      datos_corr = filter(Economia, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Educacion$Indicador) {
-      datos_corr = filter(Educacion, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Poblacion$Indicador) {
-      datos_corr = filter(Poblacion, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Pobreza$Indicador) {
-      datos_corr = filter(Pobreza, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Salud$Indicador) {
-      datos_corr = filter(Salud, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Trabajo$Indicador) {
-      datos_corr = filter(Trabajo, Indicador == input$var_corr_2)
-    }
-    
-    datos_corr <- Ciencia |> 
-      filter(Año == input$anio_corr, Indicador == input$indicador) |> 
-      inner_join(datos_corr, unmatched = "drop", by = c("Pais","Codigo", "Año")) |> 
-      drop_na()
-
-      graf <- 
-        datos_corr |> ggplot(aes(x = Valor.x, y = Valor.y, color = Pais), color = "dodgerblue") +
-        geom_point() +
-        xlab(label = input$indicador) +
-        ylab(label = input$var_corr_2) +
-        annotate(geom = "text", 
-                 label = ifelse(nrow(datos_corr) == 0, "No hay datos que coincidan con los filtros aplicados", paste("Correlación:", cor(datos_corr$Valor.x, datos_corr$Valor.y))),
-                 x = ifelse(nrow(datos_corr) == 0, 1, mean(datos_corr$Valor.x)),
-                 y = ifelse(nrow(datos_corr) == 0, 1, max(datos_corr$Valor.y)*0.7)
-        )
-        
-    
-    ggplotly(graf)
-  })
   
   ### Mapa ciencia -----------------------
   
@@ -458,6 +482,93 @@ server <- function(input, output, session) {
                     direction = "auto")) |> 
       addLegend(pal = pal, values = ~datos$Valor, opacity = 0.7, title = NULL,
                 position = "bottomright")
+  })
+  
+  ## Analisis -------------------------
+  
+  ### Grafico correlaciones ----------------
+  
+  output$plot_corr <- renderPlotly({
+    
+    if (input$var_corr_1 %in% Ciencia$Indicador) {
+      datos_corr_1 = filter(Ciencia, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Vida$Indicador) {
+      datos_corr_1 = filter(Vida, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Economia$Indicador) {
+      datos_corr_1 = filter(Economia, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Educacion$Indicador) {
+      datos_corr_1 = filter(Educacion, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Poblacion$Indicador) {
+      datos_corr_1 = filter(Poblacion, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Pobreza$Indicador) {
+      datos_corr_1 = filter(Pobreza, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Salud$Indicador) {
+      datos_corr_1 = filter(Salud, Indicador == input$var_corr_1)
+    } else if (input$var_corr_1 %in% Trabajo$Indicador) {
+      datos_corr_1 = filter(Trabajo, Indicador == input$var_corr_1)
+    }
+    
+    if (input$var_corr_2 %in% Ciencia$Indicador) {
+      datos_corr_2 = filter(Ciencia, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Vida$Indicador) {
+      datos_corr_2 = filter(Vida, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Economia$Indicador) {
+      datos_corr_2 = filter(Economia, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Educacion$Indicador) {
+      datos_corr_2 = filter(Educacion, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Poblacion$Indicador) {
+      datos_corr_2 = filter(Poblacion, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Pobreza$Indicador) {
+      datos_corr_2 = filter(Pobreza, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Salud$Indicador) {
+      datos_corr_2 = filter(Salud, Indicador == input$var_corr_2)
+    } else if (input$var_corr_2 %in% Trabajo$Indicador) {
+      datos_corr_2 = filter(Trabajo, Indicador == input$var_corr_2)
+    }
+    
+    datos_corr <- datos_corr_1 |> 
+      filter(Año == input$anio_corr, Indicador == input$var_corr_1) |> 
+      inner_join(datos_corr_2, unmatched = "drop", by = c("Pais","Codigo", "Año")) |> 
+      drop_na()
+    
+    graf <- 
+      datos_corr |> ggplot(aes(x = Valor.x, y = Valor.y, color = Pais), color = "dodgerblue") +
+      geom_point() +
+      xlab(label = input$var_corr_1) +
+      ylab(label = input$var_corr_2) +
+      annotate(geom = "text", 
+               label = ifelse(nrow(datos_corr) == 0, "No hay datos que coincidan con los filtros aplicados", paste("Correlación:", cor(datos_corr$Valor.x, datos_corr$Valor.y))),
+               x = ifelse(nrow(datos_corr) == 0, 1, mean(datos_corr$Valor.x)),
+               y = ifelse(nrow(datos_corr) == 0, 1, max(datos_corr$Valor.y)*0.7)
+      )
+    
+    
+    ggplotly(graf)
+  })
+  
+  
+  ### Grafico aporte componentes principales --------------------
+  
+  output$graf_aporte_cp <- renderPlot(graf_aporte_cp)
+  
+  ### Grafico clusters ----------------
+  
+  output$graf_acp <- renderPlotly({
+    
+    componentex <- sym(input$componentex)
+    componentey <- sym(input$componentey)
+    
+    graf_acp <- acp$ind$coord |> 
+      bind_cols(datos_acp, Grupo = datos_cluster$Grupo) |> 
+      select(Pais, !!componentex, !!componentey, Grupo) |> 
+      ggplot() +
+      aes(x = !!componentex, y = !!componentey, label = Pais, color = Grupo) +  # Usa color según el grupo
+      geom_hline(yintercept = 0, linewidth= 0.1) +
+      geom_vline(xintercept = 0, linewidth= 0.1) +
+      geom_point(alpha = 0.80, size = 3) +
+      labs(color = "Grupo", fill = "Grupo")
+    
+    graf_acp <- ggplotly(graf_acp, tooltip = c("Pais", "Grupo", "x", "y"))
   })
   
 }
