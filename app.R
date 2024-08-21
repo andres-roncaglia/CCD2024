@@ -42,6 +42,10 @@ gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |>
          Pais = Entity) |> 
   mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo")
 
+
+# Carga de datos https://github.com/argendatafundar/data?tab=readme-ov-file ------------------
+
+
 # Preparación de bases de datos --------------
 prep <- function(x) {
   x |> 
@@ -274,7 +278,8 @@ server <- function(input, output, session) {
       ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
       geom_point() +
       geom_line() +
-      ylab(label = input$indicador)
+      ylab(label = input$indicador) |> 
+      scale_x_continuous(breaks = floor(seq(min(filter(Ciencia, Indicador == input$indicador)$Año), max(filter(Ciencia, Indicador == input$indicador)$Año), length.out = 6)))
     
     ggplotly(graf)
   })
@@ -331,23 +336,24 @@ server <- function(input, output, session) {
       session = session,
       inputId = "mapa_anio",
       choices = sort(unique(filter(Ciencia, Indicador == input$indicador)$Año)),
-      selected = max(filter(Ciencia, Indicador == input$indicador)$Año)
+      selected = max(unique(filter(Ciencia, Indicador == input$indicador)$Año))
     )
   })
   
   # Maapa
   output$mapa_ciencia <- renderLeaflet({
     
-    datos <- filter(Ciencia, Indicador == input$indicador, Año == input$mapa_anio)
-    
+    datos <- left_join(datos_mapa, filter(Ciencia, Indicador == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
+      rename(Pais = name_long)
+
     
     pal <- colorNumeric(
       palette = "RdYlGn",
-      domain = filter(Ciencia, Indicador == input$indicador)
+      domain = filter(Ciencia, Indicador == input$indicador)$Valor
     )
     
     Labels <- sprintf(
-      "<strong>%s</strong><br/>%g",
+      paste("<strong>%s</strong><br/>",input$indicador, ": ", "%g"),
       datos$Pais, 
       datos$Valor
     ) %>% lapply(htmltools::HTML)
@@ -369,10 +375,24 @@ server <- function(input, output, session) {
                   labelOptions = labelOptions(
                     style = list("font-weight" = "normal", padding = "3px 8px"),
                     textsize = "15px",
-                    direction = "auto"))
+                    direction = "auto")) |> 
+      addLegend(pal = pal, values = ~datos$Valor, opacity = 0.7, title = NULL,
+                position = "bottomright")
   })
   
 }
 
 # Run the application 
 shinyApp(ui = ui, server = server)
+
+
+
+# Ideas ------------------
+
+# Analisis de componentes principales y luego analisis cluster para agrupar paises, hacerlo fijo para un solo año
+
+# En la misma pagina meter el grafico de correlaciones
+
+# Arreglar valores NA grafico mapa
+
+# 
