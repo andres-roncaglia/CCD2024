@@ -19,6 +19,7 @@ Pobreza <- read_xlsx("Datos/Pobreza.xlsx")
 Salud <- read_xlsx("Datos/Salud.xlsx")
 Trabajo <- read_xlsx("Datos/Trabajo.xlsx")
 
+
 # Carga de datos https://ourworldindata.org/ ---------------
 
 transporte_publico <- read.csv("Datos/sub - acceso transporte publico.csv") |> 
@@ -44,6 +45,9 @@ gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |>
 
 
 # Carga de datos https://github.com/argendatafundar/data?tab=readme-ov-file ------------------
+
+
+
 
 
 # Preparación de bases de datos --------------
@@ -80,9 +84,38 @@ Pobreza <- prep(Pobreza) |> arrange(Pais)
 Salud <- prep(Salud) |> arrange(Pais)
 Trabajo <- prep(Trabajo) |> arrange(Pais)
 
+library(FactoMineR)
 
+datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Salud, Trabajo) |> 
+  filter(Año == 2022) |> 
+  distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
+  pivot_wider(names_from = Indicador,
+              values_from = Valor,
+              values_fill = list(Valor = NA)) |> 
+  select(!Año) |> 
+  select(where(~ sum(is.na(.)) < 3)) |> 
+  select(where(~ !all(is.na(.)))) # Elimino las columnas con NA
 
+acp <- PCA(X = select_if(datos_acp, is.numeric) , scale.unit = T, graph = F, ncp = Inf)
 
+jugadores <- acp$ind$coord %>% 
+  bind_cols(datos_acp) %>%
+  select(Pais, Dim.1, Dim.2) %>% 
+  ggplot() +
+  aes(x = Dim.1, y = Dim.2, label = Pais, color = Pais) +
+  geom_hline(yintercept = 0, linewidth= 0.1) +
+  geom_vline(xintercept = 0, linewidth= 0.1) +
+  geom_point(alpha = 0.80, size = 3) +
+  theme_bw()
+
+ggplotly(jugadores)
+
+acp$eig |> ggplot(aes(x = 1:nrow(acp$eig), y = `percentage of variance`)) +
+  geom_point() +
+  geom_line() +
+  xlab("Componente principal") +
+  ylab("Variancia explicada por la componente (%)") +
+  scale_x_continuous(breaks = 1:nrow(acp$eig))
 
 # Mapa de sudamerica ----------------
 library(leaflet)
