@@ -8,6 +8,7 @@ library(ggplot2)
 library(plotly)
 library(readxl)
 library(RColorBrewer)
+library(DT)
 
 # Carga de datos https://data.undp.org/access-all-data-------------
 Ciencia <- read_xlsx("Datos/Ciencia y cambios tecnologicos.xlsx")
@@ -27,26 +28,38 @@ transporte_publico <- read.csv("Datos/sub - acceso transporte publico.csv") |>
          Año = Year,
          Codigo = Code,
          Pais = Entity) |> 
-  mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público")
+  mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público",
+         Trad = "Porcentaje de la poblacion con acceso conveniente al transporte público",
+         Abrev = "Acceso al transporte público (%)",
+         Ayuda = "Porcentaje de la poblacion con acceso conveniente al transporte público")
 
 emisiones <- read.csv("Datos/sub - emisiones de co2.csv")|> 
   rename(Valor = Per.capita.carbon.dioxide.emissions.from.transport,
          Año = Year,
          Codigo = Code,
          Pais = Entity) |> 
-  mutate(Indicador = "Emisiones de dioxido de carbono por el transporte per capita")
+  mutate(Indicador = "Emisiones CO2 por el transporte (per capita)",
+         Trad = "Emisiones CO2 por el transporte (per capita)",
+         Abrev = "Emisiones CO2 por el transporte (per capita)",
+         Ayuda = "Emisiones de Dioxido de carbono per capita emitidas por el transporte")
 
 gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |> 
   rename(Valor = Research.and.development.expenditure....of.GDP.,
          Año = Year,
          Codigo = Code,
          Pais = Entity) |> 
-  mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo")
+  mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo",
+         Trad = "Porcentaje del GDP invertido en investigación y desarrollo",
+         Abrev = "GDP invertido (%)",
+         Ayuda = "Porcentaje del GDP invertido en investigación y desarrollo")
 
 
 # Carga de datos https://github.com/argendatafundar/data?tab=readme-ov-file ------------------
 
 
+# Carga de traducciones ----------
+
+Traducciones <- read_xlsx("Datos/Traducciones variables.xlsx")
 
 
 
@@ -64,7 +77,8 @@ prep <- function(x) {
         Pais == "Bolivia (Plurinational State of)" ~ "Bolivia",
         Pais == "Venezuela (Bolivarian Republic of)" ~ "Venezuela", 
         T ~ Pais),
-      Año = as.numeric(Año))
+      Año = as.numeric(Año)) |> 
+    left_join(Traducciones, by = "Indicador")
 }
 
 Ciencia <- prep(Ciencia) 
@@ -93,10 +107,10 @@ library(FactoMineR)
 datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Salud, Trabajo) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
-  pivot_wider(names_from = Indicador,
+  select(!c(Año, Abrev, Ayuda, Indicador)) |> 
+  pivot_wider(names_from = Trad,
               values_from = Valor,
               values_fill = list(Valor = NA)) |> 
-  select(!Año) |> 
   select(where(~ sum(is.na(.)) < 3)) # Excluyo las variables con pocos datos
 
 
@@ -106,11 +120,14 @@ acp <- PCA(X = select_if(datos_acp, is.numeric) , scale.unit = T, graph = F, ncp
 
 ## Grafico aporte de las componentes principales ----------------------
 graf_aporte_cp <- as.data.frame(acp$eig) |>
+  mutate_if(is.numeric,round,2) |> 
   mutate(color = case_when(`cumulative percentage of variance` < 85 ~ "Menor al 85%",
-                           T ~ "Mayor al 85%")) |> 
-  ggplot(aes(x = 1:nrow(acp$eig), y = `percentage of variance`, color = color)) +
+                           T ~ "Mayor al 85%"),
+         text = paste("Porcentaje acumulado de la variancia:",`cumulative percentage of variance`)) |> 
+  rename("Porcentaje de la variancia" = `percentage of variance`, "Porcentaje acumulado de la variancia" = `cumulative percentage of variance`) |> 
+  ggplot(aes(x = 1:nrow(acp$eig), y = `Porcentaje de la variancia`, color = color)) +
   geom_line(color = "black") +
-  geom_point(size = 3) +
+  geom_point(aes(text = text),size = 3) +
   xlab("Componente principal") +
   ylab("Variancia explicada por la componente (%)") +
   scale_x_continuous(breaks = 1:nrow(acp$eig)) +
@@ -266,7 +283,7 @@ ui <- dashboardPage(
         fluidRow(column(7, 
                         pickerInput(inputId = "indicador",
                                     label = "Variable",
-                                    unique(Ciencia$Indicador))),
+                                    unique(Ciencia$Trad))),
                  column(5,
                         sliderTextInput(inputId = "mapa_anio",
                                     label = "Año",
@@ -328,7 +345,7 @@ ui <- dashboardPage(
                    options = list(
                      `live-search` = TRUE,
                      size = 7))
-                 ), br(),
+                 ),
                  fluidRow(
                    sliderInput(inputId = "anio_corr",
                                label = "Año",
@@ -336,16 +353,19 @@ ui <- dashboardPage(
                                max = 2022,
                                value = 2022
                    )
+                 ),
+                 fluidRow(
+                   valueBoxOutput("caja_correlaciones", width = 11)
                  )
                  )
         ),
-        
+        br(),
         fluidRow(
           column(7,
-                 plotOutput("graf_aporte_cp")),
+                 plotlyOutput("graf_aporte_cp")),
           
           column(5,
-                 #tabla con las 5 componentes mas fuertes
+                 DTOutput("tabla_cp")
                  )
         ),
         br(),
@@ -420,14 +440,15 @@ server <- function(input, output, session) {
   output$plot_evo_ciencia <- renderPlotly({
   
     graf <- Ciencia |> 
-      filter(Indicador == input$indicador) |> 
+      filter(Trad == input$indicador) |> 
       ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
       geom_point() +
       geom_line() +
-      ylab(label = input$indicador) |> 
-      scale_x_continuous(breaks = floor(seq(min(filter(Ciencia, Indicador == input$indicador)$Año), max(filter(Ciencia, Indicador == input$indicador)$Año), length.out = 6)))
+      ylab(label = input$indicador) +
+      xlab(label = "Año") +
+      scale_x_continuous(breaks = floor(seq(min(filter(Ciencia, Trad == input$indicador)$Año), max(filter(Ciencia, Trad == input$indicador)$Año), length.out = 6)))
     
-    ggplotly(graf)
+    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
   })
 
   
@@ -439,25 +460,24 @@ server <- function(input, output, session) {
     updateSliderTextInput(
       session = session,
       inputId = "mapa_anio",
-      choices = sort(unique(filter(Ciencia, Indicador == input$indicador)$Año)),
-      selected = max(unique(filter(Ciencia, Indicador == input$indicador)$Año))
+      choices = sort(unique(filter(Ciencia, Trad == input$indicador)$Año)),
+      selected = max(unique(filter(Ciencia, Trad == input$indicador)$Año))
     )
   })
   
   # Maapa
   output$mapa_ciencia <- renderLeaflet({
     
-    datos <- left_join(datos_mapa, filter(Ciencia, Indicador == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
+    datos <- left_join(datos_mapa, filter(Ciencia, Trad == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
       rename(Pais = name_long)
-
     
     pal <- colorNumeric(
       palette = "RdYlGn",
-      domain = filter(Ciencia, Indicador == input$indicador)$Valor
+      domain = filter(Ciencia, Trad == input$indicador)$Valor
     )
     
     Labels <- sprintf(
-      paste("<strong>%s</strong><br/>",input$indicador, ": ", "%g"),
+      paste("<strong>%s</strong><br/>%g"),
       datos$Pais, 
       datos$Valor
     ) %>% lapply(htmltools::HTML)
@@ -488,7 +508,7 @@ server <- function(input, output, session) {
   
   ### Grafico correlaciones ----------------
   
-  output$plot_corr <- renderPlotly({
+  datos_corr <- reactive({
     
     if (input$var_corr_1 %in% Ciencia$Indicador) {
       datos_corr_1 = filter(Ciencia, Indicador == input$var_corr_1)
@@ -508,6 +528,7 @@ server <- function(input, output, session) {
       datos_corr_1 = filter(Trabajo, Indicador == input$var_corr_1)
     }
     
+    
     if (input$var_corr_2 %in% Ciencia$Indicador) {
       datos_corr_2 = filter(Ciencia, Indicador == input$var_corr_2)
     } else if (input$var_corr_2 %in% Vida$Indicador) {
@@ -526,30 +547,102 @@ server <- function(input, output, session) {
       datos_corr_2 = filter(Trabajo, Indicador == input$var_corr_2)
     }
     
-    datos_corr <- datos_corr_1 |> 
+    
+    datos_corr_1 |> 
       filter(Año == input$anio_corr, Indicador == input$var_corr_1) |> 
       inner_join(datos_corr_2, unmatched = "drop", by = c("Pais","Codigo", "Año")) |> 
       drop_na()
+  })
+  
+  
+  output$plot_corr <- renderPlotly({
+    
+    datos_corr <- datos_corr()
     
     graf <- 
       datos_corr |> ggplot(aes(x = Valor.x, y = Valor.y, color = Pais), color = "dodgerblue") +
       geom_point() +
       xlab(label = input$var_corr_1) +
-      ylab(label = input$var_corr_2) +
-      annotate(geom = "text", 
-               label = ifelse(nrow(datos_corr) == 0, "No hay datos que coincidan con los filtros aplicados", paste("Correlación:", cor(datos_corr$Valor.x, datos_corr$Valor.y))),
-               x = ifelse(nrow(datos_corr) == 0, 1, mean(datos_corr$Valor.x)),
-               y = ifelse(nrow(datos_corr) == 0, 1, max(datos_corr$Valor.y)*0.7)
-      )
+      ylab(label = input$var_corr_2)
+    
+    if (nrow(datos_corr) < 4) {
+      graf <- graf +
+        annotate(geom = "text", 
+                 label = "Pocos datos que coincidan con los filtros aplicados",
+                 x = 1,
+                 y = 1
+        )
+    }
     
     
     ggplotly(graf)
   })
   
+  ### Caja correlaciones ---------------
+  
+  output$caja_correlaciones <- renderValueBox({
+    datos_corr <- datos_corr()
+    
+    if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < -0.7) {
+      
+      fuerza_corr <- "Correlación negativa fuerte"
+    } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < -0.3) {
+      
+      fuerza_corr <- "Correlación negativa leve"
+    } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < 0.3) {
+      
+      fuerza_corr <- "Incorrelacionadas"
+    } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < 0.7) {
+      
+      fuerza_corr <- "Correlación positiva leve"
+    }else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < 1) {
+      
+      fuerza_corr <- "Correlación positiva fuerte"
+    }
+    
+    
+    valueBox(
+      subtitle = fuerza_corr,
+      value = round(cor(datos_corr$Valor.x, datos_corr$Valor.y), 3),
+      width = 3,
+      color = "aqua"
+    )
+  })
   
   ### Grafico aporte componentes principales --------------------
   
-  output$graf_aporte_cp <- renderPlot(graf_aporte_cp)
+  output$graf_aporte_cp <- renderPlotly({
+    ggplotly(graf_aporte_cp, tooltip = c("y", "text")) |> 
+      layout(legend = list(orientation = "h",  
+                           x = 0.5,              
+                           xanchor = "center",  
+                           y = -0.2))
+  })
+  
+  
+  ### Tabla de componentes principales -----------------
+  
+  output$tabla_cp <- renderDT({
+    acp$var$contrib |>
+      as.data.frame() |> 
+      mutate(Variable = rownames(acp$var$contrib)) |>
+      `rownames<-`(NULL) |> 
+      mutate_if(is.numeric, round, 4) |> 
+      relocate(Variable, .before = colnames(acp$var$contrib)[1]) |> 
+      datatable(selection = "none",escape = F, options = list(pageLength = 5,
+                                                              scrollX = T,
+                                                              scrollY = "300px",
+                                                              paging = F,
+                                                              scrollCollapse = T,
+                                                              lengthMenu = c(3,5,10, 15, nrow(acp$var$contrib)),
+                                                              select = list(style = 'none'),
+                                                              columnDefs = list(
+                                                                list(
+                                                                  targets = 0,  # First column (index starts at 0)
+                                                                  width = '600px'  # Set width for the first column
+                                                                ))
+                                                              ))
+  })
   
   ### Grafico clusters ----------------
   
