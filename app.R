@@ -98,6 +98,7 @@ Pobreza <- prep(Pobreza) |> arrange(Pais)
 Salud <- prep(Salud) |> arrange(Pais)
 Trabajo <- prep(Trabajo) |> arrange(Pais)
 
+vida_poblacion <- rbind(Vida,Poblacion)
 
 # Analisis de componentes principales -----------------------
 
@@ -205,7 +206,8 @@ ui <- dashboardPage(
                      menuItem("Pobreza", tabName = "pobreza", icon = icon("person-shelter")),
                      menuItem("Salud", tabName = "salud", icon = icon("heart-pulse")),
                      menuItem("Trabajo", tabName = "trabajo", icon = icon("briefcase")),
-                     menuItem("Análisis de datos", tabName = "analisis", icon = icon("magnifying-glass-chart"))
+                     menuItem("Análisis de datos", tabName = "analisis", icon = icon("magnifying-glass-chart")),
+                     menuItem("Bases de datos", tabName = "datos", icon = icon("database"))
                      )
                    ),
   
@@ -259,7 +261,7 @@ ui <- dashboardPage(
                  actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
-                 actionBttn("go_to_details", "Go to Detailed Page", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("datos", "Bases de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
                  actionBttn("go_to_details", "Go to Detailed Page", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
@@ -297,13 +299,45 @@ ui <- dashboardPage(
                  plotlyOutput("plot_evo_ciencia")),
           
           column(5,
-                 leafletOutput("mapa_ciencia", width = "100%", height = "400px")
+                 leafletOutput("mapa", width = "100%", height = "400px")
                  )
         )
         
         
         
         ),
+      
+      # Pagina Vida y poblacion --------------------------
+      
+      tabItem(
+        tabName = "vida",
+        h2("Población y vida"),
+        
+        fluidRow(
+          column(7,
+                 h4("Población a lo largo de los años")
+                 ),
+          column(5,
+                 pickerInput(inputId = "indicador",
+                             label = "Variable",
+                             unique(vida_poblacion$Trad)), br(),
+                 sliderTextInput(inputId = "mapa_anio",
+                                 label = "Año",
+                                 grid = T,
+                                 choices = sort(unique(vida_poblacion$Año)),
+                                 selected = max(vida_poblacion$Año)
+                 ))
+        ),
+        
+        fluidRow(
+          column(7,
+                 plotlyOutput("plot_evo_vida")),
+          
+          column(5,
+                 leafletOutput("mapa", width = "100%", height = "400px")
+          )
+        )
+      ),
       
       # Pagina Analisis de datos ------------------
       
@@ -429,6 +463,10 @@ server <- function(input, output, session) {
     updateTabItems(session, "sidebar", selected = "analisis")
   })
   
+  observeEvent(input$datos, {
+    updateTabItems(session, "sidebar", selected = "datos")
+  })
+  
   observeEvent(input$github, {
     browseURL("https://github.com/andres-roncaglia/CCD2024")
   })
@@ -450,30 +488,77 @@ server <- function(input, output, session) {
     
     ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
   })
-
   
-  ### Mapa ciencia -----------------------
+  ## Vida y poblacion -------------------------------
+  
+  ### Grafico evolutivo ----------------
+  
+  output$plot_evo_vida <- renderPlotly({
+    
+    graf <- vida_poblacion |> 
+      filter(Trad == "Población, total" & !is.na(Valor)) |> 
+      mutate(Valor = round(Valor/1000000, 2)) |> 
+      ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
+      geom_point() +
+      geom_line() +
+      ylab(label = "Población total (millones)") +
+      xlab(label = "Año") +
+      scale_x_continuous(breaks = floor(seq(min(filter(vida_poblacion, Trad == "Población, total")$Año), max(filter(vida_poblacion, Trad == "Población, total")$Año), length.out = 6)))
+    
+    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
+  })
+  
+  ## Mapa -----------------------
+  
+  # Seleccion del conjunto de datos
+  
+  base_datos <- reactive({
+    if (length(input$tabs) == 0) {Ciencia} else{
+      if (input$tabs == "ciencia") {
+        Ciencia
+        } else if (input$tabs == "vida") {
+          Vida
+        } else if  (input$tabs == "economia") {
+          Economia
+        } else if (input$tabs == "educacion") {
+          Educacion
+        } else if  (input$tabs == "poblacion") {
+          Poblacion
+        } else if (input$tabs == "pobreza") {
+          Pobreza
+        } else if  (input$tabs == "salud") {
+          Salud
+        } else if (input$tabs == "trabajo") {
+          Trabajo}
+    }
+    
+  })
+  
   
   # Actualizador de la barra para seleccionar año
   observeEvent(input$indicador, {
+    base_datos <- base_datos()
     
     updateSliderTextInput(
       session = session,
       inputId = "mapa_anio",
-      choices = sort(unique(filter(Ciencia, Trad == input$indicador)$Año)),
-      selected = max(unique(filter(Ciencia, Trad == input$indicador)$Año))
+      choices = sort(unique(filter(base_datos, Trad == input$indicador)$Año)),
+      selected = max(unique(filter(base_datos, Trad == input$indicador)$Año))
     )
   })
+
   
   # Maapa
-  output$mapa_ciencia <- renderLeaflet({
+  output$mapa <- renderLeaflet({
     
-    datos <- left_join(datos_mapa, filter(Ciencia, Trad == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
+    base_datos <- base_datos()
+    
+    datos <- left_join(datos_mapa, filter(base_datos, Trad == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
       rename(Pais = name_long)
     
     pal <- colorNumeric(
       palette = "RdYlGn",
-      domain = filter(Ciencia, Trad == input$indicador)$Valor
+      domain = filter(base_datos, Trad == input$indicador)$Valor
     )
     
     Labels <- sprintf(
@@ -583,7 +668,11 @@ server <- function(input, output, session) {
   output$caja_correlaciones <- renderValueBox({
     datos_corr <- datos_corr()
     
-    if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < -0.7) {
+    
+    if (nrow(datos_corr) < 4) {
+      
+      fuerza_corr <- "Datos insuficientes"
+    } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < -0.7) {
       
       fuerza_corr <- "Correlación negativa fuerte"
     } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < -0.3) {
@@ -603,7 +692,7 @@ server <- function(input, output, session) {
     
     valueBox(
       subtitle = fuerza_corr,
-      value = round(cor(datos_corr$Valor.x, datos_corr$Valor.y), 3),
+      value = ifelse(nrow(datos_corr) < 4, "-", round(cor(datos_corr$Valor.x, datos_corr$Valor.y), 3)),
       width = 3,
       color = "aqua"
     )
