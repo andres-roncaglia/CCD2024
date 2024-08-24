@@ -237,6 +237,25 @@ graf_mapa = function(base_datos, indicador, anio) {
   
 }
 
+
+graf_torta_vida <- vida_poblacion |> 
+  filter(Pais == "Argentina",Trad == "Población rural, total" | Trad == "Población Urbana, total", Año == 2020) |>
+  plot_ly(labels = ~Trad, values = ~Valor, type = 'pie',
+          textposition = 'inside',
+          
+          textinfo = 'label+percent',
+          
+          insidetextfont = list(color = '#FFFFFF'),
+          
+          
+          marker = list(colors = colors,
+                        
+                        line = list(color = '#FFFFFF', width = 1)),
+          
+          #The 'pull' attribute can also be used to create space between the sectors
+          
+          showlegend = FALSE)
+
 # Interfaz ------------
 
 
@@ -372,13 +391,8 @@ ui <- dashboardPage(
           column(5,
                  pickerInput(inputId = "indicador_vida",
                              label = "Variable",
-                             unique(vida_poblacion$Trad)), br(),
-                 sliderTextInput(inputId = "mapa_anio",
-                                 label = "Año",
-                                 grid = T,
-                                 choices = sort(unique(vida_poblacion$Año)),
-                                 selected = max(vida_poblacion$Año)
-                 ))
+                             unique(vida_poblacion$Trad))
+                 )
         ),
         
         fluidRow(
@@ -388,7 +402,29 @@ ui <- dashboardPage(
           column(5,
                  leafletOutput("mapa_vida", width = "100%", height = "400px")
           )
-        )
+        ),
+        
+        fluidRow(column(4,
+                        pickerInput(inputId = "indicador_vida_pais",
+                                    label = "País",
+                                    unique(vida_poblacion$Pais))),
+                 column(3),
+                 column(4,
+                        sliderTextInput(inputId = "mapa_anio",
+                                        label = "Año",
+                                        grid = T,
+                                        choices = sort(unique(vida_poblacion$Año)),
+                                        selected = max(vida_poblacion$Año)
+                        )
+                        )),
+        
+        fluidRow(column(4
+                        
+                        ),
+                 column(4
+                        ),
+                 column(4
+                        ))
       ),
       
       # Pagina Analisis de datos ------------------
@@ -487,7 +523,8 @@ ui <- dashboardPage(
                    )
                  ),
           column(2,
-                 h4("Boton descarga"))
+                 downloadButton("datos_descarga", "Descargar")
+                 )
           
           
         ),
@@ -700,7 +737,7 @@ server <- function(input, output, session) {
       xlab(label = input$var_corr_1) +
       ylab(label = input$var_corr_2)
     
-    if (nrow(datos_corr) < 4) {
+    if (nrow(datos_corr) < 1) {
       graf <- graf +
         annotate(geom = "text", 
                  label = "Pocos datos que coincidan con los filtros aplicados",
@@ -804,6 +841,45 @@ server <- function(input, output, session) {
   })
   
   ## Bases de datos -------------
+  
+  ### Boton descarga --------------------
+  
+  # Seleccion del conjunto de datos
+  
+  base_datos <- reactive({
+    if (length(input$base_datos) == 0) {Ciencia} else{
+      if (input$base_datos == "Ciencia") {
+        Ciencia
+        
+      } else if (input$base_datos == "Vida y población") {
+        vida_poblacion
+        
+      } else if  (input$base_datos == "economia") {
+        Economia
+      } else if (input$base_datos == "educacion") {
+        Educacion
+      } else if  (input$base_datos == "poblacion") {
+        Poblacion
+      } else if (input$base_datos == "pobreza") {
+        Pobreza
+      } else if  (input$base_datos == "salud") {
+        Salud
+      } else if (input$base_datos == "trabajo") {
+        Trabajo} else {Ciencia}
+    } 
+    
+  })
+  
+  
+  output$datos_descarga <- downloadHandler(
+    
+    filename = function() {
+      paste0(input$base_datos, ".csv")
+    },
+    content = function(file) {
+      write.csv(base_datos(), file)
+    }
+  )
   
   ### Tabla ------------
   
