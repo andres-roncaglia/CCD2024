@@ -185,6 +185,58 @@ mapa <- datos_mapa |>
   setMaxBounds(lng1 = -22, lng2 = -98, lat1 = -61, lat2 = 20) |> 
   setView(lng = -58, lat = -23, zoom = 2.6)
 
+# Graficos --------------------
+
+graf_evolutivo = function(base_datos, indicador) {
+  base_datos |> 
+    filter(Trad == indicador) |> 
+    ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
+    geom_point() +
+    geom_line() +
+    ylab(label = indicador) +
+    xlab(label = "Año") +
+    scale_x_continuous(breaks = floor(seq(min(filter(base_datos, Trad == indicador)$Año), max(filter(base_datos, Trad == indicador)$Año), length.out = 6)))
+}
+
+graf_mapa = function(base_datos, indicador, anio) {
+  
+  datos <- left_join(datos_mapa, filter(base_datos, Trad == indicador, Año == anio), by = c("name_long" = "Pais")) |> 
+    rename(Pais = name_long)
+  
+  pal <- colorNumeric(
+    palette = "RdYlGn",
+    domain = filter(base_datos, Trad == indicador)$Valor
+  )
+  
+  Labels <- sprintf(
+    paste("<strong>%s</strong><br/>%g"),
+    datos$Pais, 
+    datos$Valor
+  ) %>% lapply(htmltools::HTML)
+  
+  mapa |> 
+    addPolygons(fillColor = ~pal(datos$Valor),
+                weight = 2,
+                opacity = 1,
+                color = "white",
+                dashArray = "3",
+                fillOpacity = 1,
+                highlightOptions = highlightOptions(
+                  weight = 5,
+                  color = "#666",
+                  dashArray = "",
+                  fillOpacity = 0.7,
+                  bringToFront = TRUE),
+                label = Labels,
+                labelOptions = labelOptions(
+                  style = list("font-weight" = "normal", padding = "3px 8px"),
+                  textsize = "15px",
+                  direction = "auto")) |> 
+    addLegend(pal = pal, values = ~datos$Valor, opacity = 0.7, title = NULL,
+              position = "bottomright")
+  
+}
+
 # Interfaz ------------
 
 
@@ -283,7 +335,7 @@ ui <- dashboardPage(
         h2("La ciencia en Latinoamerica"),
         
         fluidRow(column(7, 
-                        pickerInput(inputId = "indicador",
+                        pickerInput(inputId = "indicador_ciencia",
                                     label = "Variable",
                                     unique(Ciencia$Trad))),
                  column(5,
@@ -299,7 +351,7 @@ ui <- dashboardPage(
                  plotlyOutput("plot_evo_ciencia")),
           
           column(5,
-                 leafletOutput("mapa", width = "100%", height = "400px")
+                 leafletOutput("mapa_ciencia", width = "100%", height = "400px")
                  )
         )
         
@@ -318,7 +370,7 @@ ui <- dashboardPage(
                  h4("Población a lo largo de los años")
                  ),
           column(5,
-                 pickerInput(inputId = "indicador",
+                 pickerInput(inputId = "indicador_vida",
                              label = "Variable",
                              unique(vida_poblacion$Trad)), br(),
                  sliderTextInput(inputId = "mapa_anio",
@@ -334,7 +386,7 @@ ui <- dashboardPage(
                  plotlyOutput("plot_evo_vida")),
           
           column(5,
-                 leafletOutput("mapa", width = "100%", height = "400px")
+                 leafletOutput("mapa_vida", width = "100%", height = "400px")
           )
         )
       ),
@@ -415,6 +467,37 @@ ui <- dashboardPage(
                    pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[4])
                  ))
         )
+      ),
+      
+      # Pagina Bases de datos ---------------------
+      
+      tabItem(
+        tabName = "datos",
+        
+        h2("Bases de datos"),
+        
+        fluidRow(
+          column(1),
+          
+          column(8,
+                 pickerInput(
+                   inputId = "base_datos",
+                   label = "Seleccionar Base de datos", 
+                   choices = c("Ciencia", "Vida y población")
+                   )
+                 ),
+          column(2,
+                 h4("Boton descarga"))
+          
+          
+        ),
+        
+        fluidRow(
+          column(1),
+          column(10,
+            DTOutput("tabla_datos")
+                 )
+        )
       )
       
     )
@@ -471,44 +554,7 @@ server <- function(input, output, session) {
     browseURL("https://github.com/andres-roncaglia/CCD2024")
   })
   
-  ## Ciencia -------------------------------
-  
-  ### Grafico evolutivo ----------------
-  
-  output$plot_evo_ciencia <- renderPlotly({
-  
-    graf <- Ciencia |> 
-      filter(Trad == input$indicador) |> 
-      ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
-      geom_point() +
-      geom_line() +
-      ylab(label = input$indicador) +
-      xlab(label = "Año") +
-      scale_x_continuous(breaks = floor(seq(min(filter(Ciencia, Trad == input$indicador)$Año), max(filter(Ciencia, Trad == input$indicador)$Año), length.out = 6)))
-    
-    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
-  })
-  
-  ## Vida y poblacion -------------------------------
-  
-  ### Grafico evolutivo ----------------
-  
-  output$plot_evo_vida <- renderPlotly({
-    
-    graf <- vida_poblacion |> 
-      filter(Trad == "Población, total" & !is.na(Valor)) |> 
-      mutate(Valor = round(Valor/1000000, 2)) |> 
-      ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
-      geom_point() +
-      geom_line() +
-      ylab(label = "Población total (millones)") +
-      xlab(label = "Año") +
-      scale_x_continuous(breaks = floor(seq(min(filter(vida_poblacion, Trad == "Población, total")$Año), max(filter(vida_poblacion, Trad == "Población, total")$Año), length.out = 6)))
-    
-    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
-  })
-  
-  ## Mapa -----------------------
+  ## Configuraciones Mapa -----------------------
   
   # Seleccion del conjunto de datos
   
@@ -516,20 +562,22 @@ server <- function(input, output, session) {
     if (length(input$tabs) == 0) {Ciencia} else{
       if (input$tabs == "ciencia") {
         Ciencia
-        } else if (input$tabs == "vida") {
-          Vida
-        } else if  (input$tabs == "economia") {
-          Economia
-        } else if (input$tabs == "educacion") {
-          Educacion
-        } else if  (input$tabs == "poblacion") {
-          Poblacion
-        } else if (input$tabs == "pobreza") {
-          Pobreza
-        } else if  (input$tabs == "salud") {
-          Salud
-        } else if (input$tabs == "trabajo") {
-          Trabajo}
+        
+      } else if (input$tabs == "vida") {
+        Vida
+        
+      } else if  (input$tabs == "economia") {
+        Economia
+      } else if (input$tabs == "educacion") {
+        Educacion
+      } else if  (input$tabs == "poblacion") {
+        Poblacion
+      } else if (input$tabs == "pobreza") {
+        Pobreza
+      } else if  (input$tabs == "salud") {
+        Salud
+      } else if (input$tabs == "trabajo") {
+        Trabajo}
     }
     
   })
@@ -546,47 +594,49 @@ server <- function(input, output, session) {
       selected = max(unique(filter(base_datos, Trad == input$indicador)$Año))
     )
   })
-
   
-  # Maapa
-  output$mapa <- renderLeaflet({
+  
+  ## Ciencia -------------------------------
+  
+  ### Grafico evolutivo ----------------
+  
+  output$plot_evo_ciencia <- renderPlotly({
     
-    base_datos <- base_datos()
+    graf = graf_evolutivo(Ciencia, input$indicador_ciencia)
     
-    datos <- left_join(datos_mapa, filter(base_datos, Trad == input$indicador, Año == input$mapa_anio), by = c("name_long" = "Pais")) |> 
-      rename(Pais = name_long)
+    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
+  })
+  
+  ### Mapa ---------------------
+  
+  output$mapa_ciencia <- renderLeaflet({
+   
+    graf_mapa(Ciencia, input$indicador_ciencia, input$mapa_anio)
     
-    pal <- colorNumeric(
-      palette = "RdYlGn",
-      domain = filter(base_datos, Trad == input$indicador)$Valor
-    )
+  })
+  
+  ## Vida y poblacion -------------------------------
+  
+  ### Grafico evolutivo ----------------
+  
+  output$plot_evo_vida <- renderPlotly({
     
-    Labels <- sprintf(
-      paste("<strong>%s</strong><br/>%g"),
-      datos$Pais, 
-      datos$Valor
-    ) %>% lapply(htmltools::HTML)
+    base_datos = vida_poblacion %>%
+      mutate(Valor = round(Valor/1000000, 2)) |>
+      filter(!is.na(Valor))
     
-    mapa |> 
-      addPolygons(fillColor = ~pal(datos$Valor),
-                  weight = 2,
-                  opacity = 1,
-                  color = "white",
-                  dashArray = "3",
-                  fillOpacity = 1,
-                  highlightOptions = highlightOptions(
-                    weight = 5,
-                    color = "#666",
-                    dashArray = "",
-                    fillOpacity = 0.7,
-                    bringToFront = TRUE),
-                  label = Labels,
-                  labelOptions = labelOptions(
-                    style = list("font-weight" = "normal", padding = "3px 8px"),
-                    textsize = "15px",
-                    direction = "auto")) |> 
-      addLegend(pal = pal, values = ~datos$Valor, opacity = 0.7, title = NULL,
-                position = "bottomright")
+    graf = graf_evolutivo(base_datos,"Población, total") +
+      ylab(label = "Población total (millones)")
+    
+    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
+    
+  })
+  
+  ### Mapa ---------------------
+  
+  output$mapa_vida <- renderLeaflet({
+    graf_mapa(vida_poblacion, input$indicador_vida, input$mapa_anio)
+    
   })
   
   ## Analisis -------------------------
@@ -752,6 +802,24 @@ server <- function(input, output, session) {
     
     graf_acp <- ggplotly(graf_acp, tooltip = c("Pais", "Grupo", "x", "y"))
   })
+  
+  ## Bases de datos -------------
+  
+  ### Tabla ------------
+  
+  output$tabla_datos = renderDT({
+    
+    if (input$base_datos == "Ciencia") {datos = Ciencia
+    } else if (input$base_datos == "Vida y población") {datos = vida_poblacion}
+    
+    datos %>% 
+      datatable(selection = "single",escape = F, options = list(scrollX = T,
+                                                              scrollY = "300px",
+                                                              paging = F,
+                                                              scrollCollapse = T,
+                                                              lengthMenu = c(10, 15, 30, nrow(datos))
+                                                              ))
+    })
   
 }
 
