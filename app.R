@@ -9,6 +9,8 @@ library(plotly)
 library(readxl)
 library(RColorBrewer)
 library(DT)
+library(stringr)
+library(zoo)
 
 # Carga de datos https://data.undp.org/access-all-data-------------
 Ciencia <- read_xlsx("Datos/Ciencia y cambios tecnologicos.xlsx")
@@ -29,9 +31,7 @@ transporte_publico <- read.csv("Datos/sub - acceso transporte publico.csv") |>
          Codigo = Code,
          Pais = Entity) |> 
   mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público",
-         Trad = "Porcentaje de la poblacion con acceso conveniente al transporte público",
-         Abrev = "Acceso al transporte público (%)",
-         Ayuda = "Porcentaje de la poblacion con acceso conveniente al transporte público")
+         Descripción = "Porcentaje de la poblacion con acceso conveniente al transporte público")
 
 emisiones <- read.csv("Datos/sub - emisiones de co2.csv")|> 
   rename(Valor = Per.capita.carbon.dioxide.emissions.from.transport,
@@ -39,9 +39,7 @@ emisiones <- read.csv("Datos/sub - emisiones de co2.csv")|>
          Codigo = Code,
          Pais = Entity) |> 
   mutate(Indicador = "Emisiones CO2 por el transporte (per capita)",
-         Trad = "Emisiones CO2 por el transporte (per capita)",
-         Abrev = "Emisiones CO2 por el transporte (per capita)",
-         Ayuda = "Emisiones de Dioxido de carbono per capita emitidas por el transporte")
+         Descripción = "Emisiones de Dioxido de carbono per capita emitidas por el transporte")
 
 gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |> 
   rename(Valor = Research.and.development.expenditure....of.GDP.,
@@ -49,9 +47,7 @@ gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |>
          Codigo = Code,
          Pais = Entity) |> 
   mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo",
-         Trad = "Porcentaje del GDP invertido en investigación y desarrollo",
-         Abrev = "GDP invertido (%)",
-         Ayuda = "Porcentaje del GDP invertido en investigación y desarrollo")
+         Descripción = "Porcentaje del GDP invertido en investigación y desarrollo")
 
 
 # Carga de datos https://github.com/argendatafundar/data?tab=readme-ov-file ------------------
@@ -65,7 +61,7 @@ Traducciones <- read_xlsx("Datos/Traducciones variables.xlsx")
 
 # Preparación de bases de datos --------------
 prep <- function(x) {
-  x |> 
+  x <- x |> 
     pivot_longer(
       cols = !1:3,
       names_to = "Año",
@@ -78,7 +74,19 @@ prep <- function(x) {
         Pais == "Venezuela (Bolivarian Republic of)" ~ "Venezuela", 
         T ~ Pais),
       Año = as.numeric(Año)) |> 
-    left_join(Traducciones, by = "Indicador")
+    left_join(Traducciones, by = "Indicador") |> 
+    mutate(Indicador = Trad) |> 
+    select(-c("Trad"))
+  
+  for (i in unique(x$Indicador)) {
+    data <- filter(x, Indicador == i, !is.na(Valor))
+    
+    if (nrow(data) < length(unique(x$Pais))) {
+      x <- filter(x, Indicador != i)
+    }
+  }
+  
+  return(x)
 }
 
 Ciencia <- prep(Ciencia) 
@@ -86,9 +94,7 @@ Ciencia <- Ciencia |>
   bind_rows(
     filter(transporte_publico, Codigo %in% unique(Ciencia$Codigo)),
     filter(emisiones, Codigo %in% unique(Ciencia$Codigo)),
-    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo))) |> 
-  arrange(Pais) |> 
-  filter(!(Indicador %in% c("Percentage of primary schools with access to the internet", "Percentage of secondary schools with access to the internet")))
+    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo)))
 
 Vida <- prep(Vida) |> arrange(Pais)
 Economia <- prep(Economia) |> arrange(Pais)
@@ -108,8 +114,8 @@ library(FactoMineR)
 datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Salud, Trabajo) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
-  select(!c(Año, Abrev, Ayuda, Indicador)) |> 
-  pivot_wider(names_from = Trad,
+  select(!c(Año, Descripción)) |> 
+  pivot_wider(names_from = Indicador,
               values_from = Valor,
               values_fill = list(Valor = NA)) |> 
   select(where(~ sum(is.na(.)) < 3)) # Excluyo las variables con pocos datos
@@ -189,23 +195,27 @@ mapa <- datos_mapa |>
 
 graf_evolutivo = function(base_datos, indicador) {
   base_datos |> 
-    filter(Trad == indicador) |> 
+    filter(Indicador == indicador) |> 
+    complete(Año = full_seq(Año, 1), Pais) |> 
+    group_by(Pais) |> 
+    mutate(Linea = ifelse(row_number() >= which.min(is.na(Valor)), na.approx(Valor, rule = 2), Valor)) |> # interpola los datos entre medio que faltan
+    ungroup() |> 
     ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
     geom_point() +
-    geom_line() +
+    geom_line(aes(x = Año, y = Linea, color = Pais, group = Pais), na.rm = TRUE) +
     ylab(label = indicador) +
     xlab(label = "Año") +
-    scale_x_continuous(breaks = floor(seq(min(filter(base_datos, Trad == indicador)$Año), max(filter(base_datos, Trad == indicador)$Año), length.out = 6)))
+    scale_x_continuous(breaks = floor(seq(min(filter(base_datos, Indicador == indicador)$Año), max(filter(base_datos, Indicador == indicador)$Año), length.out = 6)))
 }
 
 graf_mapa = function(base_datos, indicador, anio) {
   
-  datos <- left_join(datos_mapa, filter(base_datos, Trad == indicador, Año == anio), by = c("name_long" = "Pais")) |> 
+  datos <- left_join(datos_mapa, filter(base_datos, Indicador == indicador, Año == anio), by = c("name_long" = "Pais")) |> 
     rename(Pais = name_long)
   
   pal <- colorNumeric(
     palette = "RdYlGn",
-    domain = filter(base_datos, Trad == indicador)$Valor
+    domain = filter(base_datos, Indicador == indicador)$Valor
   )
   
   Labels <- sprintf(
@@ -237,24 +247,47 @@ graf_mapa = function(base_datos, indicador, anio) {
   
 }
 
+## Graf torta ---------
 
-graf_torta_vida <- vida_poblacion |> 
-  filter(Pais == "Argentina",Trad == "Población rural, total" | Trad == "Población Urbana, total", Año == 2020) |>
-  plot_ly(labels = ~Trad, values = ~Valor, type = 'pie',
-          textposition = 'inside',
-          
-          textinfo = 'label+percent',
-          
-          insidetextfont = list(color = '#FFFFFF'),
-          
-          
-          marker = list(colors = colors,
-                        
-                        line = list(color = '#FFFFFF', width = 1)),
-          
-          #The 'pull' attribute can also be used to create space between the sectors
-          
-          showlegend = FALSE)
+graf_torta <- function(Indicador, Año_torta, Pais_torta) {
+  
+  datos_torta<- vida_poblacion |> 
+    mutate(Valor = Valor/100 * filter(vida_poblacion, Pais == Pais_torta,Indicador == "Población, total", Año == Año_torta)$Valor) |> 
+    filter(str_detect(Indicador, "%") | str_detect(Indicador, "porcentaje") | str_detect(Indicador, "Porcentaje"),
+           Pais == Pais_torta, Año == Año_torta)
+  print(datos_torta)
+  datos_torta <- datos_torta |> mutate(Par = 1:nrow(datos_torta))
+  
+  datos_torta_complemento <- datos_torta |> 
+    mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor))
+  
+  datos_torta <- bind_rows(datos_torta,datos_torta_complemento) |> 
+    filter(Indicador == Indicador)
+  
+  if (str_detect(Indicador, "Población rural/urbana")) {
+    datos_torta <- vida_poblacion |>
+      filter(Pais == Pais_torta,Indicador == "Población rural, total" | Indicador == "Población Urbana, total", Año == Año_torta)
+  } else if (str_detect(Indicador, "Población inmigrante")) {
+    datos_torta <- vida_poblacion |>
+      filter(Pais == Pais_torta,Indicador == "Stock de migrantes internacionales a mitad de año, total", Año == Año_torta)
+
+    datos_torta_complemento <- datos_torta |>
+      mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor))
+
+    datos_torta <- bind_rows(datos_torta, datos_torta_complemento)
+
+  }
+  
+  datos_torta |> 
+    plot_ly(labels = ~Indicador, values = ~Valor, type = 'pie',
+            textposition = 'inside',
+            textinfo = 'label+percent',
+            insidetextfont = list(color = '#FFFFFF'),
+            marker = list(colors = colors,
+                          line = list(color = '#FFFFFF', width = 1)),
+            showlegend = FALSE)
+}
+
 
 # Interfaz ------------
 
@@ -291,8 +324,8 @@ ui <- dashboardPage(
       tabItem(
         tabName = "pag_principal",
         
-        h2("Contar con datos 2024", style = "text-align: center;"),
-        p("Click the button to go to the detailed view."),
+        h2("Sudamérica y el paso del tiempo", style = "text-align: center;"),
+        p("Los países del sur de América fueron siempre afectados por las políticas de países exteriores a la zona"),
         
         ## Primera hilera de botones ---------------------
         fluidRow(
@@ -356,7 +389,7 @@ ui <- dashboardPage(
         fluidRow(column(7, 
                         pickerInput(inputId = "indicador_ciencia",
                                     label = "Variable",
-                                    unique(Ciencia$Trad))),
+                                    unique(Ciencia$Indicador))),
                  column(5,
                         sliderTextInput(inputId = "mapa_anio",
                                     label = "Año",
@@ -391,7 +424,10 @@ ui <- dashboardPage(
           column(5,
                  pickerInput(inputId = "indicador_vida",
                              label = "Variable",
-                             unique(vida_poblacion$Trad))
+                             choices = c("Clasificación del índice de riesgo climático",                                                                                                                             
+                                        "Clasificación de vulnerabilidad climática",                                                                                                                                
+                                        "Índice de pobreza multidimensional",
+                                        "Población de refugiados por país o territorio de asilo"))
                  )
         ),
         
@@ -403,9 +439,9 @@ ui <- dashboardPage(
                  leafletOutput("mapa_vida", width = "100%", height = "400px")
           )
         ),
-        
+        br(),
         fluidRow(column(4,
-                        pickerInput(inputId = "indicador_vida_pais",
+                        pickerInput(inputId = "vida_pais",
                                     label = "País",
                                     unique(vida_poblacion$Pais))),
                  column(3),
@@ -418,13 +454,39 @@ ui <- dashboardPage(
                         )
                         )),
         
-        fluidRow(column(4
-                        
+        fluidRow(column(4,
+                        pickerInput(inputId = "indicador_vida_total",
+                                    label = "Población total",
+                                    choices = c("Población rural/urbana" ,unique(filter(vida_poblacion, 
+                                                            str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
+                                                            )$Indicador),
+                                                "Población inmigrante"))
                         ),
-                 column(4
+                 column(4,
+                        pickerInput(inputId = "indicador_vida_urbano",
+                                    label = "Población Urbana",
+                                    choices = c(unique(filter(vida_poblacion, 
+                                                              str_detect(Indicador, ", urbano, porcentaje") | str_detect(Indicador, "\\(% de la población urbana\\)") | str_detect(Indicador, "% de la población urbana"),
+                                                            )$Indicador)))
                         ),
-                 column(4
-                        ))
+                 column(4,
+                        pickerInput(inputId = "indicador_vida_rural",
+                                    label = "Población Rural",
+                                    choices = c(unique(filter(vida_poblacion, 
+                                                              str_detect(Indicador, ", rural, porcentaje") | str_detect(Indicador, "\\(% de la población rural\\)") | str_detect(Indicador, "% de la población rural"),
+                                                            )$Indicador)))
+                        )),
+        
+        fluidRow(
+          column(4,
+                 plotlyOutput("graf_torta_total")
+        ),
+        column(4,
+               plotlyOutput("graf_torta_urbano")
+        ),
+        column(4,
+               plotlyOutput("graf_torta_rural")
+        ))
       ),
       
       # Pagina Analisis de datos ------------------
@@ -627,8 +689,8 @@ server <- function(input, output, session) {
     updateSliderTextInput(
       session = session,
       inputId = "mapa_anio",
-      choices = sort(unique(filter(base_datos, Trad == input$indicador)$Año)),
-      selected = max(unique(filter(base_datos, Trad == input$indicador)$Año))
+      choices = sort(unique(filter(base_datos, Indicador == input$indicador)$Año)),
+      selected = max(unique(filter(base_datos, Indicador == input$indicador)$Año))
     )
   })
   
@@ -674,6 +736,12 @@ server <- function(input, output, session) {
   output$mapa_vida <- renderLeaflet({
     graf_mapa(vida_poblacion, input$indicador_vida, input$mapa_anio)
     
+  })
+  
+  ### Graficos de torta ------------------------
+  
+  output$graf_torta_total <- renderPlotly({
+    graf_torta(Indicador = input$indicador_vida_total, Año_torta = input$mapa_anio, Pais_torta = input$vida_pais)
   })
   
   ## Analisis -------------------------
@@ -771,11 +839,10 @@ server <- function(input, output, session) {
     } else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < 0.7) {
       
       fuerza_corr <- "Correlación positiva leve"
-    }else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) < 1) {
+    }else if (cor(datos_corr$Valor.x, datos_corr$Valor.y) <= 1) {
       
       fuerza_corr <- "Correlación positiva fuerte"
     }
-    
     
     valueBox(
       subtitle = fuerza_corr,
@@ -890,7 +957,7 @@ server <- function(input, output, session) {
     
     datos %>% 
       datatable(selection = "single",escape = F, options = list(scrollX = T,
-                                                              scrollY = "300px",
+                                                              scrollY = "450px",
                                                               paging = F,
                                                               scrollCollapse = T,
                                                               lengthMenu = c(10, 15, 30, nrow(datos))
@@ -906,10 +973,12 @@ shinyApp(ui = ui, server = server)
 
 # Ideas ------------------
 
-# Analisis de componentes principales y luego analisis cluster para agrupar paises, hacerlo fijo para un solo año
+# Unir bases de datos: Poblacion-Vida, Ciencia-Educacion, Trabajo, pobreza (Salud no)
 
-# En la misma pagina meter el grafico de correlaciones
+# Dim1: Desarrollo, Educacion, Desigualdad
 
-# Arreglar valores NA grafico mapa
+# Dim 2: Economía, educación, Acceso al agua potable
 
-# 
+#  Dim 3: Poblacion, 
+
+#  Dim 4: Inflación, Igualdad de genero
