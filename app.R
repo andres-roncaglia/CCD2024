@@ -19,7 +19,6 @@ Economia <- read_xlsx("Datos/Desarrollo economico.xlsx")
 Educacion <- read_xlsx("Datos/Educacion.xlsx")
 Poblacion <- read_xlsx("Datos/Poblacion y cambios demograficos.xlsx")
 Pobreza <- read_xlsx("Datos/Pobreza.xlsx")
-Salud <- read_xlsx("Datos/Salud.xlsx")
 Trabajo <- read_xlsx("Datos/Trabajo.xlsx")
 
 
@@ -76,8 +75,10 @@ prep <- function(x) {
       Año = as.numeric(Año)) |> 
     left_join(Traducciones, by = "Indicador") |> 
     mutate(Indicador = Trad) |> 
-    select(-c("Trad"))
+    select(-c("Trad")) |> 
+    filter(!is.na(Valor)) # Saco las filas sin datos
   
+  # Dejo solo los indicadores que tengan al menos la misma cantidad de datos que de paises 
   for (i in unique(x$Indicador)) {
     data <- filter(x, Indicador == i, !is.na(Valor))
     
@@ -101,17 +102,17 @@ Economia <- prep(Economia) |> arrange(Pais)
 Educacion <- prep(Educacion) |> arrange(Pais)
 Poblacion <- prep(Poblacion) |> arrange(Pais)
 Pobreza <- prep(Pobreza) |> arrange(Pais)
-Salud <- prep(Salud) |> arrange(Pais)
 Trabajo <- prep(Trabajo) |> arrange(Pais)
 
 vida_poblacion <- rbind(Vida,Poblacion)
+ciencia_educacion <- rbind(Ciencia,Educacion)
 
 # Analisis de componentes principales -----------------------
 
 library(FactoMineR)
 
 ## Preparacion de los datos para ACP -------------------
-datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Salud, Trabajo) |> 
+datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Trabajo) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
   select(!c(Año, Descripción)) |> 
@@ -198,7 +199,7 @@ graf_evolutivo = function(base_datos, indicador) {
     filter(Indicador == indicador) |> 
     complete(Año = full_seq(Año, 1), Pais) |> 
     group_by(Pais) |> 
-    mutate(Linea = ifelse(row_number() >= which.min(is.na(Valor)), na.approx(Valor, rule = 2), Valor)) |> # interpola los datos entre medio que faltan
+    mutate(Linea = ifelse((row_number() >= which.min(is.na(Valor))) & (row_number() <= max(which(!is.na(Valor)))), na.approx(Valor, rule = 2), Valor)) |> # interpola los datos entre medio que faltan
     ungroup() |> 
     ggplot(aes(x = Año, y = Valor, color = Pais, group = Pais)) +
     geom_point() +
@@ -249,35 +250,38 @@ graf_mapa = function(base_datos, indicador, anio) {
 
 ## Graf torta ---------
 
-graf_torta <- function(Indicador, Año_torta, Pais_torta) {
-  
+graf_torta <- function(Indicador_torta, Año_torta, Pais_torta) {
+  datos_torta <- NULL
   datos_torta<- vida_poblacion |> 
     mutate(Valor = Valor/100 * filter(vida_poblacion, Pais == Pais_torta,Indicador == "Población, total", Año == Año_torta)$Valor) |> 
     filter(str_detect(Indicador, "%") | str_detect(Indicador, "porcentaje") | str_detect(Indicador, "Porcentaje"),
            Pais == Pais_torta, Año == Año_torta)
-  print(datos_torta)
+
   datos_torta <- datos_torta |> mutate(Par = 1:nrow(datos_torta))
   
   datos_torta_complemento <- datos_torta |> 
-    mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor))
-  
+    mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor),
+           Indicador = paste("No", Indicador))
+
   datos_torta <- bind_rows(datos_torta,datos_torta_complemento) |> 
-    filter(Indicador == Indicador)
-  
-  if (str_detect(Indicador, "Población rural/urbana")) {
+    filter(Par == filter(datos_torta, Indicador == Indicador_torta)$Par[1])
+
+  if (str_detect(Indicador_torta, "Población rural/urbana")) {
     datos_torta <- vida_poblacion |>
       filter(Pais == Pais_torta,Indicador == "Población rural, total" | Indicador == "Población Urbana, total", Año == Año_torta)
-  } else if (str_detect(Indicador, "Población inmigrante")) {
+  } else if (str_detect(Indicador_torta, "Población inmigrante")) {
     datos_torta <- vida_poblacion |>
-      filter(Pais == Pais_torta,Indicador == "Stock de migrantes internacionales a mitad de año, total", Año == Año_torta)
+      filter(Pais == Pais_torta,Indicador == "Stock de migrantes internacionales a mitad de año, total", Año == Año_torta) |> 
+      mutate(Indicador = "Migrantes")
 
     datos_torta_complemento <- datos_torta |>
-      mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor))
+      mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor),
+             Indicador = "Población oriunda")
 
     datos_torta <- bind_rows(datos_torta, datos_torta_complemento)
 
   }
-  
+  print(datos_torta)
   datos_torta |> 
     plot_ly(labels = ~Indicador, values = ~Valor, type = 'pie',
             textposition = 'inside',
@@ -302,13 +306,10 @@ ui <- dashboardPage(
                    sidebarMenu(
                      id = "sidebar",
                      menuItem("Página principal", tabName = "pag_principal", icon = icon("home")),
-                     menuItem("Ciencia", tabName = "ciencia", icon = icon("microscope")),
-                     menuItem("Vida", tabName = "vida", icon = icon("hand-holding-heart")),
+                     menuItem("Desarrollo", tabName = "ciencia", icon = icon("microscope")),
+                     menuItem("Vida y Población", tabName = "vida", icon = icon("hand-holding-heart")),
                      menuItem("Economia", tabName = "economia", icon = icon("money-bill-wave")),
-                     menuItem("Educacion", tabName = "educacion", icon = icon("user-graduate")),
-                     menuItem("Poblacion", tabName = "poblacion", icon = icon("users")),
                      menuItem("Pobreza", tabName = "pobreza", icon = icon("person-shelter")),
-                     menuItem("Salud", tabName = "salud", icon = icon("heart-pulse")),
                      menuItem("Trabajo", tabName = "trabajo", icon = icon("briefcase")),
                      menuItem("Análisis de datos", tabName = "analisis", icon = icon("magnifying-glass-chart")),
                      menuItem("Bases de datos", tabName = "datos", icon = icon("database"))
@@ -324,78 +325,62 @@ ui <- dashboardPage(
       tabItem(
         tabName = "pag_principal",
         
-        h2("Sudamérica y el paso del tiempo", style = "text-align: center;"),
+        h2("Que los datos te cuenten la historia", style = "text-align: center;"),
         p("Los países del sur de América fueron siempre afectados por las políticas de países exteriores a la zona"),
         
         ## Primera hilera de botones ---------------------
         fluidRow(
           column(3,
-                 actionBttn("ciencia", "Ciencia", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("ciencia", "Desarrollo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
-                 actionBttn("vida", "Vida", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("vida", "Vida y Población", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
                  actionBttn("economia", "Economia", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
-                 actionBttn("educacion", "Educacion", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("educacion", "Pobreza", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           )
         ),
         
         ## Segunda hilera de botones ---------------------
         fluidRow(
           column(3,
-                 actionBttn("poblacion", "Poblacion", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
-          ),
-          column(3,
-                 actionBttn("pobreza", "Pobreza", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
-          ),
-          column(3,
-                 actionBttn("salud", "Salud", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
-          ),
-          column(3,
                  actionBttn("trabajo", "Trabajo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
-          )
-        ),
-        
-        ## Tercera hilera de botones ---------------------
-        fluidRow(
+          ),
           column(3,
                  actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
-                 actionBttn("datos", "Bases de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
-          ),
-          column(3,
-                 actionBttn("go_to_details", "Go to Detailed Page", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("datos", "Datos y Glosario", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
           ),
           column(3,
                  actionBttn("github", "Github", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", icon = icon("github"))
           )
-        )
-        
+        ),
         
       ),
       
       
-      # Pagina Ciencia -------------
+      # Pagina Desarrollo -------------
       
       tabItem(
         tabName = "ciencia",
         
-        h2("La ciencia en Latinoamerica"),
+        h2("Avances tecnológicos"),
         
         fluidRow(column(7, 
                         pickerInput(inputId = "indicador_ciencia",
                                     label = "Variable",
-                                    unique(Ciencia$Indicador))),
+                                    choices = unique(Ciencia$Indicador),
+                                    selected = unique(Ciencia$Indicador)[1])),
                  column(5,
-                        sliderTextInput(inputId = "mapa_anio",
+                        sliderTextInput(inputId = "mapa_ciencia_anio",
                                     label = "Año",
                                     grid = T,
                                     choices = sort(unique(Ciencia$Año)),
-                                    selected = max(Ciencia$Año)
+                                    selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año)
                                         ))),
         
         fluidRow(
@@ -405,9 +390,33 @@ ui <- dashboardPage(
           column(5,
                  leafletOutput("mapa_ciencia", width = "100%", height = "400px")
                  )
+        ),
+        ## Educacion -------------------
+        h2("Educación"),
+        
+        fluidRow(column(4, 
+                        pickerInput(inputId = "indicador_educacion",
+                                    label = "Variable",
+                                    choices = c(
+                                      "Años promedio de escolaridad",
+                                      "Años esperados de escolarización",
+                                      "Índice de Desarrollo Humano",
+                                      "Tasa de alfabetización",
+                                      "Población con al menos educación secundaria")
+                                    )),
+                 column(4,
+                        pickerInput(inputId = "pais_educacion",
+                                        label = "País",
+                                        choices = sort(unique(Educacion$Pais))
+                        ))),
+        
+        fluidRow(
+          column(7,
+                 plotlyOutput("plot_evo_educacion")),
+          
+          column(5
+          )
         )
-        
-        
         
         ),
       
@@ -446,11 +455,11 @@ ui <- dashboardPage(
                                     unique(vida_poblacion$Pais))),
                  column(3),
                  column(4,
-                        sliderTextInput(inputId = "mapa_anio",
+                        sliderTextInput(inputId = "mapa_vida_anio",
                                         label = "Año",
                                         grid = T,
-                                        choices = sort(unique(vida_poblacion$Año)),
-                                        selected = max(vida_poblacion$Año)
+                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Clasificación del índice de riesgo climático")$Año)),
+                                        selected = max(unique(filter(vida_poblacion, Indicador =="Clasificación del índice de riesgo climático")$Año))
                         )
                         )),
         
@@ -502,13 +511,11 @@ ui <- dashboardPage(
           column(5,
                  fluidRow(
                    pickerInput(inputId = "var_corr_1", label = "Variable eje x", choices = list(
-                     Ciencia = unique(Ciencia$Indicador), 
-                     Vida = unique(Vida$Indicador), 
+                     Desarrollo = unique(ciencia_educacion$Indicador), 
+                     "Vida Y Población" = unique(vida_poblacion$Indicador), 
                      Economia = unique(Economia$Indicador), 
-                     Educacion = unique(Educacion$Indicador), 
                      Poblacion = unique(Poblacion$Indicador), 
                      Pobreza = unique(Pobreza$Indicador), 
-                     Salud = unique(Salud$Indicador), 
                      Trabajo = unique(Trabajo$Indicador)
                    ), selected = "Access to internet, percent of population",
                    options = list(
@@ -517,13 +524,11 @@ ui <- dashboardPage(
                  ),
                  fluidRow(
                    pickerInput(inputId = "var_corr_2", label = "Variable eje y", choices = list(
-                     Ciencia = unique(Ciencia$Indicador),
-                     Vida = unique(Vida$Indicador),
-                     Economia = unique(Economia$Indicador),
-                     Educacion = unique(Educacion$Indicador),
-                     Poblacion = unique(Poblacion$Indicador),
-                     Pobreza = unique(Pobreza$Indicador),
-                     Salud = unique(Salud$Indicador),
+                     Desarrollo = unique(ciencia_educacion$Indicador), 
+                     "Vida Y Población" = unique(vida_poblacion$Indicador), 
+                     Economia = unique(Economia$Indicador), 
+                     Poblacion = unique(Poblacion$Indicador), 
+                     Pobreza = unique(Pobreza$Indicador), 
                      Trabajo = unique(Trabajo$Indicador)
                    ), selected = "Economic Inequality Score",
                    options = list(
@@ -581,7 +586,7 @@ ui <- dashboardPage(
                  pickerInput(
                    inputId = "base_datos",
                    label = "Seleccionar Base de datos", 
-                   choices = c("Ciencia", "Vida y población")
+                   choices = c("Desarrollo", "Vida y población")
                    )
                  ),
           column(2,
@@ -621,20 +626,8 @@ server <- function(input, output, session) {
     updateTabItems(session, "sidebar", selected = "economia")
   })
   
-  observeEvent(input$educacion, {
-    updateTabItems(session, "sidebar", selected = "educacion")
-  })
-  
-  observeEvent(input$poblacion, {
-    updateTabItems(session, "sidebar", selected = "poblacion")
-  })
-  
   observeEvent(input$pobreza, {
     updateTabItems(session, "sidebar", selected = "pobreza")
-  })
-  
-  observeEvent(input$salud, {
-    updateTabItems(session, "sidebar", selected = "salud")
   })
   
   observeEvent(input$trabajo, {
@@ -653,49 +646,8 @@ server <- function(input, output, session) {
     browseURL("https://github.com/andres-roncaglia/CCD2024")
   })
   
-  ## Configuraciones Mapa -----------------------
   
-  # Seleccion del conjunto de datos
-  
-  base_datos <- reactive({
-    if (length(input$tabs) == 0) {Ciencia} else{
-      if (input$tabs == "ciencia") {
-        Ciencia
-        
-      } else if (input$tabs == "vida") {
-        Vida
-        
-      } else if  (input$tabs == "economia") {
-        Economia
-      } else if (input$tabs == "educacion") {
-        Educacion
-      } else if  (input$tabs == "poblacion") {
-        Poblacion
-      } else if (input$tabs == "pobreza") {
-        Pobreza
-      } else if  (input$tabs == "salud") {
-        Salud
-      } else if (input$tabs == "trabajo") {
-        Trabajo}
-    }
-    
-  })
-  
-  
-  # Actualizador de la barra para seleccionar año
-  observeEvent(input$indicador, {
-    base_datos <- base_datos()
-    
-    updateSliderTextInput(
-      session = session,
-      inputId = "mapa_anio",
-      choices = sort(unique(filter(base_datos, Indicador == input$indicador)$Año)),
-      selected = max(unique(filter(base_datos, Indicador == input$indicador)$Año))
-    )
-  })
-  
-  
-  ## Ciencia -------------------------------
+  ## Desarrollo -------------------------------
   
   ### Grafico evolutivo ----------------
   
@@ -703,16 +655,64 @@ server <- function(input, output, session) {
     
     graf = graf_evolutivo(Ciencia, input$indicador_ciencia)
     
-    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
+    ggplotly(graf, tooltip = c("Año", "Valor", "color"))
   })
   
   ### Mapa ---------------------
   
+  # Actualizador de la barra para seleccionar año
+  observeEvent(input$indicador_ciencia, {
+    base_datos <- Ciencia
+
+    updateSliderTextInput(
+      session = session,
+      inputId = "mapa_ciencia_anio",
+      choices = sort(unique(filter(base_datos, Indicador == input$indicador_ciencia)$Año)),
+      selected = max(unique(filter(base_datos, Indicador == input$indicador_ciencia)$Año))
+    )
+  })
+  
   output$mapa_ciencia <- renderLeaflet({
    
-    graf_mapa(Ciencia, input$indicador_ciencia, input$mapa_anio)
+    graf_mapa(ciencia_educacion, input$indicador_ciencia, input$mapa_ciencia_anio)
     
   })
+  
+  ### Graf evo Educacion -----------------
+  
+  output$plot_evo_educacion <- renderPlotly({
+    base_datos <- Educacion |> 
+      filter(Pais == input$pais_educacion, str_detect(Indicador, input$indicador_educacion) & 
+               Indicador != "Índice de Desarrollo Humano ajustado por presiones planetarias" & Indicador != "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado" &
+               Indicador != "Índice de Desarrollo Humano Ajustado por Desigualdad" & Indicador != "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado") |> 
+      mutate(Sexo = case_when(
+        str_detect(Indicador, "femenin") ~ "Mujeres",
+        str_detect(Indicador, "masculin") ~ "Varones",
+        TRUE ~ "Ambos sexos"))
+    
+    graf <- base_datos |>
+      ggplot(aes(x = Año, y = Valor, color = Sexo, group = Sexo)) +
+      geom_point() +
+      geom_line() +
+      ylab(label = input$indicador_educacion) +
+      xlab(label = "Año") +
+      scale_x_continuous(breaks = floor(seq(min(base_datos$Año), max(base_datos$Año), length.out = 6))) +
+      scale_color_manual(values = c("Mujeres" = "pink", "Varones" = "dodgerblue3", "Ambos sexos" = "gray30"))
+    
+    ggplotly(graf, tooltip = c("Año", "Valor", "color"), source = "plot_evo_educacion") |> 
+      layout(legend = list(orientation = "h",   # Horizontal
+                           x = 0.5,             # Centrado horizontalmente
+                           y = -0.2,            # Posición vertical (abajo del gráfico)
+                           xanchor = "center",  # Ancla en el centro
+                           yanchor = "top"))
+
+  })
+  
+  output$info_extra_educacion <- renderPrint({
+    event_data(event = "plotly_click", source = "plot_evo_educacion")
+  })
+  
+  
   
   ## Vida y poblacion -------------------------------
   
@@ -727,21 +727,33 @@ server <- function(input, output, session) {
     graf = graf_evolutivo(base_datos,"Población, total") +
       ylab(label = "Población total (millones)")
     
-    ggplotly(graf, tooltip = c("Año", "Valor", "Pais"))
+    ggplotly(graf, tooltip = c("Año", "Valor", "color"))
     
   })
   
   ### Mapa ---------------------
   
+  # Actualizador de la barra para seleccionar año
+  observeEvent(input$indicador_vida, {
+    base_datos <- vida_poblacion
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "mapa_vida_anio",
+      choices = sort(unique(filter(base_datos, Indicador == input$indicador_vida)$Año)),
+      selected = max(unique(filter(base_datos, Indicador == input$indicador_vida)$Año))
+    )
+  })
+  
   output$mapa_vida <- renderLeaflet({
-    graf_mapa(vida_poblacion, input$indicador_vida, input$mapa_anio)
+    graf_mapa(vida_poblacion, input$indicador_vida, input$mapa_vida_anio)
     
   })
   
   ### Graficos de torta ------------------------
   
   output$graf_torta_total <- renderPlotly({
-    graf_torta(Indicador = input$indicador_vida_total, Año_torta = input$mapa_anio, Pais_torta = input$vida_pais)
+    graf_torta(Indicador_torta = input$indicador_vida_total, Año_torta = input$mapa_vida_anio, Pais_torta = input$vida_pais)
   })
   
   ## Analisis -------------------------
@@ -750,8 +762,8 @@ server <- function(input, output, session) {
   
   datos_corr <- reactive({
     
-    if (input$var_corr_1 %in% Ciencia$Indicador) {
-      datos_corr_1 = filter(Ciencia, Indicador == input$var_corr_1)
+    if (input$var_corr_1 %in% ciencia_educacion$Indicador) {
+      datos_corr_1 = filter(ciencia_educacion, Indicador == input$var_corr_1)
     } else if (input$var_corr_1 %in% Vida$Indicador) {
       datos_corr_1 = filter(Vida, Indicador == input$var_corr_1)
     } else if (input$var_corr_1 %in% Economia$Indicador) {
@@ -762,15 +774,13 @@ server <- function(input, output, session) {
       datos_corr_1 = filter(Poblacion, Indicador == input$var_corr_1)
     } else if (input$var_corr_1 %in% Pobreza$Indicador) {
       datos_corr_1 = filter(Pobreza, Indicador == input$var_corr_1)
-    } else if (input$var_corr_1 %in% Salud$Indicador) {
-      datos_corr_1 = filter(Salud, Indicador == input$var_corr_1)
     } else if (input$var_corr_1 %in% Trabajo$Indicador) {
       datos_corr_1 = filter(Trabajo, Indicador == input$var_corr_1)
     }
     
     
-    if (input$var_corr_2 %in% Ciencia$Indicador) {
-      datos_corr_2 = filter(Ciencia, Indicador == input$var_corr_2)
+    if (input$var_corr_2 %in% ciencia_educacion$Indicador) {
+      datos_corr_2 = filter(ciencia_educacion, Indicador == input$var_corr_2)
     } else if (input$var_corr_2 %in% Vida$Indicador) {
       datos_corr_2 = filter(Vida, Indicador == input$var_corr_2)
     } else if (input$var_corr_2 %in% Economia$Indicador) {
@@ -781,8 +791,6 @@ server <- function(input, output, session) {
       datos_corr_2 = filter(Poblacion, Indicador == input$var_corr_2)
     } else if (input$var_corr_2 %in% Pobreza$Indicador) {
       datos_corr_2 = filter(Pobreza, Indicador == input$var_corr_2)
-    } else if (input$var_corr_2 %in% Salud$Indicador) {
-      datos_corr_2 = filter(Salud, Indicador == input$var_corr_2)
     } else if (input$var_corr_2 %in% Trabajo$Indicador) {
       datos_corr_2 = filter(Trabajo, Indicador == input$var_corr_2)
     }
@@ -914,9 +922,9 @@ server <- function(input, output, session) {
   # Seleccion del conjunto de datos
   
   base_datos <- reactive({
-    if (length(input$base_datos) == 0) {Ciencia} else{
+    if (length(input$base_datos) == 0) {ciencia_educacion} else{
       if (input$base_datos == "Ciencia") {
-        Ciencia
+        ciencia_educacion
         
       } else if (input$base_datos == "Vida y población") {
         vida_poblacion
@@ -929,10 +937,8 @@ server <- function(input, output, session) {
         Poblacion
       } else if (input$base_datos == "pobreza") {
         Pobreza
-      } else if  (input$base_datos == "salud") {
-        Salud
       } else if (input$base_datos == "trabajo") {
-        Trabajo} else {Ciencia}
+        Trabajo} else {ciencia_educacion}
     } 
     
   })
@@ -952,7 +958,7 @@ server <- function(input, output, session) {
   
   output$tabla_datos = renderDT({
     
-    if (input$base_datos == "Ciencia") {datos = Ciencia
+    if (input$base_datos == "Desarrollo") {datos = ciencia_educacion
     } else if (input$base_datos == "Vida y población") {datos = vida_poblacion}
     
     datos %>% 
@@ -981,4 +987,11 @@ shinyApp(ui = ui, server = server)
 
 #  Dim 3: Poblacion, 
 
-#  Dim 4: Inflación, Igualdad de genero
+#  Dim 4: Inflación, Igualdad de genero+
+
+
+# Agregar un carrusel para mostrar los valores en el año de los indicadores extra en educacion
+
+# Agregar tasas de crecimiento decrecimiento 
+
+# Meter todos los plotlys en cajas? agregar anajo de cada caja la descripcion del indicador?
