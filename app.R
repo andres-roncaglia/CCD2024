@@ -11,6 +11,13 @@ library(RColorBrewer)
 library(DT)
 library(stringr)
 library(zoo)
+library(shinydashboardPlus)
+
+# Para el carrusel si mantengo el mouse
+jscode <-"
+$(document).ready(function(){
+            $('#mycarousel').carousel( { interval:  false } );
+});"
 
 # Carga de datos https://data.undp.org/access-all-data-------------
 Ciencia <- read_xlsx("Datos/Ciencia y cambios tecnologicos.xlsx")
@@ -292,6 +299,84 @@ graf_torta <- function(Indicador_torta, Año_torta, Pais_torta) {
             showlegend = FALSE)
 }
 
+## Graf semi torta -------------
+
+graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo = "proporcion") {
+  
+  if (nrow(filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona)) <1) {
+    graf <- ggplot(base_datos) +
+      aes(x = 1, y = 1) +
+      annotate(geom = "text", label = "Sin información", x = 1, y = 1, size = 10) +
+      theme_void() +
+      theme(axis.line = element_blank())
+    
+    return(ggplotly(graf))
+  }
+  
+  base_datos <- filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona) |> 
+    complete(Año = full_seq(Año, 1), Pais) |>  
+    fill(Valor, .direction = "down") # Si el año no tiene medicion toma la del ultimo año que tenga
+  print(base_datos)
+  if (maximo == "proporcion") {
+    maximo <- 100
+  } else {
+    maximo <- max(base_datos$Valor)
+  }
+  
+  plot_ly(
+    
+    domain = list(x = c(0, 1), y = c(0, 1)),
+    
+    value = filter(base_datos, Año == Anio_dona)$Valor,
+    
+    title = list(text = indicador_dona),
+    
+    type = "indicator",
+    
+    mode = "gauge+number+delta",
+    
+    delta = list(reference = ifelse(nrow(filter(base_datos, Año == Anio_dona-1)) > 0, 
+                                    filter(base_datos, Año == Anio_dona-1)$Valor,
+                                    filter(base_datos, Año == Anio_dona)$Valor)),
+    gauge = list(
+      axis =list(range = list(NULL, maximo)),
+      
+      steps = list(
+        
+        list(range = c(0, max(base_datos$Valor)), color = "dodgerblue3"))
+      ))
+  
+}
+
+carrusel_item <- function(indicador, num) {
+  carouselItem(
+    caption = "Prueba 1",
+    
+    column(width = 8, offset = 2,
+           sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
+                           label = "Año",
+                           grid = T,
+                           choices = sort(unique(filter(Educacion, Indicador == indicador)$Año)),
+                           selected = max(filter(Educacion, Indicador == indicador)$Año))),
+    br(),
+    
+    flipBox(
+      id = paste0("carrusel",num),
+      width = 12,
+      front = div(
+        class = "d-flex justify-content-center",
+        height = "300px",
+        width = "100%",
+        plotlyOutput(paste0("dona_carrusel_",num))),
+      back = div(
+        class = "text-center",
+        height = "300px",
+        width = "100%",
+        h1(indicador),
+        p(filter(Educacion, Indicador == indicador)$Descripción[1])
+      ))
+  )
+}
 
 # Interfaz ------------
 
@@ -414,10 +499,32 @@ ui <- dashboardPage(
           column(7,
                  plotlyOutput("plot_evo_educacion")),
           
-          column(5
+          column(5,
+                 box(width = NULL,
+                   
+                     tags$head(tags$script(HTML(jscode))), # Para el carrusel si mantengo el mouse
+                     
+                     carousel(
+                       width = 12,
+                       id = "carrusel_educacion",
+                       
+                       carrusel_item(indicador = "Coeficiente de desigualdad humana", num = 1),
+                       carrusel_item(indicador = "Proporción de la fuerza laboral con educación avanzada", num = 2),
+                       carrusel_item(indicador = "Índice de Inclusión Social y Equidad", num = 3),
+                       carrusel_item(indicador = "Gasto en educación terciaria (% del gasto gubernamental en educación)", num = 4),
+                       carrusel_item(indicador = "Índice de Desarrollo de Género", num = 5),
+                       carrusel_item(indicador = "Desigualdad en educación", num = 6),
+                       carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad", num = 7),
+                       carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado", num = 8),
+                       carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias", num = 9),
+                       carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado", num = 10),
+                       carrusel_item(indicador = "Inscripción escolar, terciaria (% bruto)", num = 11)
+                     )
+                   
+                   )
+                 )
           )
-        )
-        
+
         ),
       
       # Pagina Vida y poblacion --------------------------
@@ -712,7 +819,65 @@ server <- function(input, output, session) {
     event_data(event = "plotly_click", source = "plot_evo_educacion")
   })
   
+  ### Carrusel Educacion ----------------
   
+  
+  output$dona_carrusel_1 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_1, indicador_dona = "Coeficiente de desigualdad humana",
+              maximo = "")
+  })
+  
+  output$dona_carrusel_2 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_2, indicador_dona = "Proporción de la fuerza laboral con educación avanzada",
+              maximo = "proporcion")
+  })
+  output$dona_carrusel_3 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_3, indicador_dona = "Índice de Inclusión Social y Equidad",
+              maximo = "")
+  })
+  output$dona_carrusel_4 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_4, indicador_dona = "Gasto en educación terciaria (% del gasto gubernamental en educación)",
+              maximo = "")
+  })
+  output$dona_carrusel_5 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_5, indicador_dona = "Índice de Desarrollo de Género",
+              maximo = "")
+  })
+  output$dona_carrusel_6 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_6, indicador_dona = "Desigualdad en educación",
+              maximo = "")
+  })
+  output$dona_carrusel_7 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_7, indicador_dona = "Índice de Desarrollo Humano Ajustado por Desigualdad",
+              maximo = "")
+  })
+  output$dona_carrusel_8 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_8, indicador_dona = "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado",
+              maximo = "")
+  })
+  output$dona_carrusel_9 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_9, indicador_dona = "Índice de Desarrollo Humano ajustado por presiones planetarias",
+              maximo = "")
+  })
+  output$dona_carrusel_10 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_10, indicador_dona = "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado",
+              maximo = "")
+  })
+  output$dona_carrusel_11 <- renderPlotly({
+    graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
+              Anio_dona = input$carrusel_educacion_anio_11, indicador_dona = "Inscripción escolar, terciaria (% bruto)",
+              maximo = "proporcion")
+  })
   
   ## Vida y poblacion -------------------------------
   
@@ -995,3 +1160,7 @@ shinyApp(ui = ui, server = server)
 # Agregar tasas de crecimiento decrecimiento 
 
 # Meter todos los plotlys en cajas? agregar anajo de cada caja la descripcion del indicador?
+
+# Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
+
+# Graficos de media dona para mostrar los porcentajes https://plotly.com/r/gauge-charts/
