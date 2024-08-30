@@ -316,7 +316,7 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
   base_datos <- filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona) |> 
     complete(Año = full_seq(Año, 1), Pais) |>  
     fill(Valor, .direction = "down") # Si el año no tiene medicion toma la del ultimo año que tenga
-  print(base_datos)
+  
   if (maximo == "proporcion") {
     maximo <- 100
   } else {
@@ -328,8 +328,6 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
     domain = list(x = c(0, 1), y = c(0, 1)),
     
     value = filter(base_datos, Año == Anio_dona)$Valor,
-    
-    title = list(text = indicador_dona),
     
     type = "indicator",
     
@@ -344,39 +342,44 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
       steps = list(
         
         list(range = c(0, max(base_datos$Valor)), color = "dodgerblue3"))
-      ))
+      )) |> 
+    config(responsive = F)
   
 }
 
 carrusel_item <- function(indicador, num) {
-  carouselItem(
-    caption = "Prueba 1",
-    
-    column(width = 8, offset = 2,
-           sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
-                           label = "Año",
-                           grid = T,
-                           choices = sort(unique(filter(Educacion, Indicador == indicador)$Año)),
-                           selected = max(filter(Educacion, Indicador == indicador)$Año))),
-    br(),
-    
-    flipBox(
-      id = paste0("carrusel",num),
-      width = 12,
-      front = div(
-        class = "d-flex justify-content-center",
-        height = "300px",
-        width = "100%",
-        plotlyOutput(paste0("dona_carrusel_",num))),
-      back = div(
-        class = "text-center",
-        height = "300px",
-        width = "100%",
-        h1(indicador),
-        p(filter(Educacion, Indicador == indicador)$Descripción[1])
-      ))
-  )
-}
+    carouselItem(
+      
+      h4(indicador), br(),
+      
+      column(width = 8, offset = 2,
+             sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
+                             label = "Año",
+                             grid = T,
+                             choices = sort(unique(filter(Educacion, Indicador == indicador)$Año)),
+                             selected = max(filter(Educacion, Indicador == indicador)$Año),
+                             animate = T)),
+      br(),
+      
+      flipBox(
+        id = paste0("carrusel",num),
+        width = 12,
+        front = div(
+          class = "d-flex justify-content-center",
+          height = "300px",
+          width = "100%",
+          plotlyOutput(paste0("dona_carrusel_",num))),
+        back = div(
+          class = "text-center",
+          height = "300px",
+          width = "100%",
+          h1(indicador),
+          p(filter(Educacion, Indicador == indicador)$Descripción[1])
+        ))
+    )
+  }
+
+
 
 # Interfaz ------------
 
@@ -384,8 +387,8 @@ carrusel_item <- function(indicador, num) {
 ui <- dashboardPage(
   
   
-  dashboardHeader(titleWidth = "0%"),
-  
+  dashboardHeader(),
+  skin = "midnight",
   ## Barra de opciones ----------------
   dashboardSidebar(collapsed = T,
                    sidebarMenu(
@@ -455,75 +458,102 @@ ui <- dashboardPage(
         
         h2("Avances tecnológicos"),
         
-        fluidRow(column(7, 
-                        pickerInput(inputId = "indicador_ciencia",
-                                    label = "Variable",
-                                    choices = unique(Ciencia$Indicador),
-                                    selected = unique(Ciencia$Indicador)[1])),
-                 column(5,
-                        sliderTextInput(inputId = "mapa_ciencia_anio",
-                                    label = "Año",
-                                    grid = T,
-                                    choices = sort(unique(Ciencia$Año)),
-                                    selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año)
-                                        ))),
-        
         fluidRow(
-          column(7,
-                 plotlyOutput("plot_evo_ciencia")),
-          
-          column(5,
-                 leafletOutput("mapa_ciencia", width = "100%", height = "400px")
-                 )
-        ),
+          box(width = 12,
+              fluidRow(column(7, 
+                              pickerInput(inputId = "indicador_ciencia",
+                                          label = "Variable",
+                                          choices = unique(Ciencia$Indicador),
+                                          selected = unique(Ciencia$Indicador)[1])),
+                       column(5,
+                              sliderTextInput(inputId = "mapa_ciencia_anio",
+                                              label = "Año",
+                                              grid = T,
+                                              choices = sort(unique(Ciencia$Año)),
+                                              selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año)
+                              ))),
+              
+              fluidRow(
+                column(7,
+                       plotlyOutput("plot_evo_ciencia")),
+                
+                column(5,
+                       leafletOutput("mapa_ciencia", width = "100%", height = "400px")
+                )
+              ),
+              
+              accordion(
+                id = "acordion_ciencia",
+                accordionItem(
+                  title = "Descripción del indicador",
+                  collapsed = F,
+                  textOutput("descripcion_indicador_ciencia")
+                ),
+                accordionItem(
+                  title = "¡Que los datos te cuenten la historia!",
+                  collapsed = F,
+                  textOutput("historia_ciencia")
+                )
+              )
+              
+              )
+          ),
+        
         ## Educacion -------------------
         h2("Educación"),
-        
-        fluidRow(column(4, 
-                        pickerInput(inputId = "indicador_educacion",
-                                    label = "Variable",
-                                    choices = c(
-                                      "Años promedio de escolaridad",
-                                      "Años esperados de escolarización",
-                                      "Índice de Desarrollo Humano",
-                                      "Tasa de alfabetización",
-                                      "Población con al menos educación secundaria")
-                                    )),
-                 column(4,
-                        pickerInput(inputId = "pais_educacion",
-                                        label = "País",
-                                        choices = sort(unique(Educacion$Pais))
-                        ))),
-        
-        fluidRow(
+        box(width = 12,
+            column(4, 
+                   pickerInput(inputId = "indicador_educacion",
+                               label = "Variable",
+                               choices = c(
+                                 "Años promedio de escolaridad",
+                                 "Años esperados de escolarización",
+                                 "Índice de Desarrollo Humano",
+                                 "Tasa de alfabetización",
+                                 "Población con al menos educación secundaria")
+                   )),
+            column(3,
+                   pickerInput(inputId = "pais_educacion",
+                               label = "País",
+                               choices = sort(unique(Educacion$Pais))
+                   )), 
           column(7,
-                 plotlyOutput("plot_evo_educacion")),
-          
-          column(5,
-                 box(width = NULL,
-                   
-                     tags$head(tags$script(HTML(jscode))), # Para el carrusel si mantengo el mouse
-                     
-                     carousel(
-                       width = 12,
-                       id = "carrusel_educacion",
-                       
-                       carrusel_item(indicador = "Coeficiente de desigualdad humana", num = 1),
-                       carrusel_item(indicador = "Proporción de la fuerza laboral con educación avanzada", num = 2),
-                       carrusel_item(indicador = "Índice de Inclusión Social y Equidad", num = 3),
-                       carrusel_item(indicador = "Gasto en educación terciaria (% del gasto gubernamental en educación)", num = 4),
-                       carrusel_item(indicador = "Índice de Desarrollo de Género", num = 5),
-                       carrusel_item(indicador = "Desigualdad en educación", num = 6),
-                       carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad", num = 7),
-                       carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado", num = 8),
-                       carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias", num = 9),
-                       carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado", num = 10),
-                       carrusel_item(indicador = "Inscripción escolar, terciaria (% bruto)", num = 11)
-                     )
-                   
+                 plotlyOutput("plot_evo_educacion"),
+                 accordion(
+                   id = "acordion_educacion",
+                   accordionItem(
+                     title = "Descripción del indicador",
+                     collapsed = F,
+                     textOutput("descripcion_indicador_educacion")
+                   ),
+                   accordionItem(
+                     title = "¡Que los datos te cuenten la historia!",
+                     collapsed = F,
+                     textOutput("historia_educacion")
                    )
                  )
+                 ),
+          
+          column(5,
+                 carousel(
+                   width = 12,
+                   id = "carrusel_educacion",
+                   
+                   carrusel_item(indicador = "Coeficiente de desigualdad humana", num = 1),
+                   carrusel_item(indicador = "Proporción de la fuerza laboral con educación avanzada", num = 2),
+                   carrusel_item(indicador = "Índice de Inclusión Social y Equidad", num = 3),
+                   carrusel_item(indicador = "Gasto en educación terciaria (% del gasto gubernamental en educación)", num = 4),
+                   carrusel_item(indicador = "Índice de Desarrollo de Género", num = 5),
+                   carrusel_item(indicador = "Desigualdad en educación", num = 6),
+                   carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad", num = 7),
+                   carrusel_item(indicador = "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado", num = 8),
+                   carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias", num = 9),
+                   carrusel_item(indicador = "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado", num = 10),
+                   carrusel_item(indicador = "Inscripción escolar, terciaria (% bruto)", num = 11)
+                 )
           )
+        ),
+        
 
         ),
       
@@ -534,75 +564,72 @@ ui <- dashboardPage(
         h2("Población y vida"),
         
         fluidRow(
-          column(7,
-                 h4("Población a lo largo de los años")
-                 ),
-          column(5,
+          column(10,
                  pickerInput(inputId = "indicador_vida",
                              label = "Variable",
-                             choices = c("Clasificación del índice de riesgo climático",                                                                                                                             
-                                        "Clasificación de vulnerabilidad climática",                                                                                                                                
+                             choices = c("Población",                                                                                                                              
                                         "Índice de pobreza multidimensional",
                                         "Población de refugiados por país o territorio de asilo"))
                  )
         ),
         
         fluidRow(
-          column(7,
-                 plotlyOutput("plot_evo_vida")),
+          column(width = 10, offset = 1, plotlyOutput("plot_evo_vida"))
           
-          column(5,
-                 leafletOutput("mapa_vida", width = "100%", height = "400px")
-          )
         ),
         br(),
         fluidRow(column(4,
                         pickerInput(inputId = "vida_pais",
                                     label = "País",
                                     unique(vida_poblacion$Pais))),
-                 column(3),
-                 column(4,
-                        sliderTextInput(inputId = "mapa_vida_anio",
-                                        label = "Año",
-                                        grid = T,
-                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Clasificación del índice de riesgo climático")$Año)),
-                                        selected = max(unique(filter(vida_poblacion, Indicador =="Clasificación del índice de riesgo climático")$Año))
-                        )
-                        )),
+                 ),
         
-        fluidRow(column(4,
+        fluidRow(
+          column(4, box(width = NULL,
                         pickerInput(inputId = "indicador_vida_total",
                                     label = "Población total",
                                     choices = c("Población rural/urbana" ,unique(filter(vida_poblacion, 
-                                                            str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
-                                                            )$Indicador),
-                                                "Población inmigrante"))
+                                                                                        str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
+                                    )$Indicador),
+                                    "Población inmigrante")), br(),
+                        sliderTextInput(inputId = "dona_vida_anio_1",
+                                        label = "Año",
+                                        grid = T,
+                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año)),
+                                        selected = max(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año))
                         ),
-                 column(4,
+                        plotlyOutput("graf_torta_total")
+                        )),
+          column(4, box(width = NULL,
                         pickerInput(inputId = "indicador_vida_urbano",
                                     label = "Población Urbana",
                                     choices = c(unique(filter(vida_poblacion, 
                                                               str_detect(Indicador, ", urbano, porcentaje") | str_detect(Indicador, "\\(% de la población urbana\\)") | str_detect(Indicador, "% de la población urbana"),
-                                                            )$Indicador)))
+                                    )$Indicador))), br(),
+                        sliderTextInput(inputId = "dona_vida_anio_2",
+                                        label = "Año",
+                                        grid = T,
+                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año)),
+                                        selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año))
                         ),
-                 column(4,
+                        plotlyOutput("graf_torta_urbano")
+                        )),
+          column(4, box(width = NULL,
                         pickerInput(inputId = "indicador_vida_rural",
                                     label = "Población Rural",
                                     choices = c(unique(filter(vida_poblacion, 
                                                               str_detect(Indicador, ", rural, porcentaje") | str_detect(Indicador, "\\(% de la población rural\\)") | str_detect(Indicador, "% de la población rural"),
-                                                            )$Indicador)))
-                        )),
+                                    )$Indicador))), br(),
+                        sliderTextInput(inputId = "dona_vida_anio_3",
+                                        label = "Año",
+                                        grid = T,
+                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año)),
+                                        selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año))
+                        ),
+                        plotlyOutput("graf_torta_rural")
+                        ))
+        ),
         
-        fluidRow(
-          column(4,
-                 plotlyOutput("graf_torta_total")
-        ),
-        column(4,
-               plotlyOutput("graf_torta_urbano")
-        ),
-        column(4,
-               plotlyOutput("graf_torta_rural")
-        ))
       ),
       
       # Pagina Analisis de datos ------------------
@@ -720,6 +747,8 @@ ui <- dashboardPage(
 # Servidor ----------------
 server <- function(input, output, session) {
   
+  
+  
   ## Botones a cada una de las secciones ----------------------
   observeEvent(input$ciencia, {
     updateTabItems(session, "sidebar", selected = "ciencia")
@@ -785,6 +814,60 @@ server <- function(input, output, session) {
     
   })
   
+  ### Descripcion acordion -----------------
+  
+  output$descripcion_indicador_ciencia <- renderText({
+    filter(Ciencia, Indicador == input$indicador_ciencia)$Descripción[1]
+  })
+  
+  ### Historia acordion -----------------
+  
+  output$historia_ciencia <- renderText({
+    
+    if (T) {
+      "Clickea alguna zona marcada para conocer la historia."
+    }
+    
+  })
+  
+  ###Funcion carrusel items -------------
+  
+  observeEvent(
+    input$pais_educacion, {
+      carrusel_item <- function(indicador, num) {
+      carouselItem(
+        
+        h4(indicador), br(),
+        
+        column(width = 8, offset = 2,
+               sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
+                               label = "Año",
+                               grid = T,
+                               choices = sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año)),
+                               selected = max(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año),
+                               animate = T)),
+        br(),
+        
+        flipBox(
+          id = paste0("carrusel",num),
+          width = 12,
+          front = div(
+            class = "d-flex justify-content-center",
+            height = "300px",
+            width = "100%",
+            plotlyOutput(paste0("dona_carrusel_",num))),
+          back = div(
+            class = "text-center",
+            height = "300px",
+            width = "100%",
+            h1(indicador),
+            p(filter(Educacion, Indicador == indicador)$Descripción[1])
+          ))
+      )
+    }
+  })
+  
+  
   ### Graf evo Educacion -----------------
   
   output$plot_evo_educacion <- renderPlotly({
@@ -819,6 +902,22 @@ server <- function(input, output, session) {
     event_data(event = "plotly_click", source = "plot_evo_educacion")
   })
   
+  ### Descripcion acordion Educacion -----------------
+  
+  output$descripcion_indicador_educacion <- renderText({
+    filter(Educacion, str_detect(Indicador, input$indicador_educacion))$Descripción[1]
+  })
+  
+  ### Historia acordion Educacion -----------------
+  
+  output$historia_educacion <- renderText({
+    
+    if (T) {
+      "Clickea alguna zona marcada para conocer la historia."
+    }
+    
+  })
+  
   ### Carrusel Educacion ----------------
   
   
@@ -841,7 +940,7 @@ server <- function(input, output, session) {
   output$dona_carrusel_4 <- renderPlotly({
     graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
               Anio_dona = input$carrusel_educacion_anio_4, indicador_dona = "Gasto en educación terciaria (% del gasto gubernamental en educación)",
-              maximo = "")
+              maximo = "proporcion")
   })
   output$dona_carrusel_5 <- renderPlotly({
     graf_dona(base_datos = Educacion, Pais_dona = input$pais_educacion, 
@@ -885,40 +984,81 @@ server <- function(input, output, session) {
   
   output$plot_evo_vida <- renderPlotly({
     
-    base_datos = vida_poblacion %>%
-      mutate(Valor = round(Valor/1000000, 2)) |>
-      filter(!is.na(Valor))
+    if (input$indicador_vida == "Población") {
+      base_datos = vida_poblacion %>%
+        mutate(Valor = round(Valor/1000000, 2)) |>
+        filter(!is.na(Valor))
+      
+      graf = graf_evolutivo(base_datos,"Población, total") +
+        ylab(label = "Población total (millones)")
+      
+      ggplotly(graf, tooltip = c("Año", "Valor", "color"))
+    } else {
+      graf = graf_evolutivo(vida_poblacion, input$indicador_vida)
+      
+      ggplotly(graf, tooltip = c("Año", "Valor", "color"))
+    }
     
-    graf = graf_evolutivo(base_datos,"Población, total") +
-      ylab(label = "Población total (millones)")
     
-    ggplotly(graf, tooltip = c("Año", "Valor", "color"))
     
   })
   
-  ### Mapa ---------------------
+  
+  ### Graficos dona poblacion ------------------------
   
   # Actualizador de la barra para seleccionar año
-  observeEvent(input$indicador_vida, {
+  observeEvent(input$indicador_vida_total, {
+    
     base_datos <- vida_poblacion
     
     updateSliderTextInput(
       session = session,
-      inputId = "mapa_vida_anio",
-      choices = sort(unique(filter(base_datos, Indicador == input$indicador_vida)$Año)),
-      selected = max(unique(filter(base_datos, Indicador == input$indicador_vida)$Año))
+      inputId = "dona_vida_anio_1",
+      choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_total)$Año)),
+      selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_total)$Año))
+    )
+  })
+  observeEvent(input$indicador_vida_urbano, {
+    
+    base_datos <- vida_poblacion
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "dona_vida_anio_2",
+      choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_urbano)$Año)),
+      selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_urbano)$Año))
+    )
+  })
+  observeEvent(input$indicador_vida_rural, {
+    
+    base_datos <- vida_poblacion
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "dona_vida_anio_3",
+      choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_rural)$Año)),
+      selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_rural)$Año))
     )
   })
   
-  output$mapa_vida <- renderLeaflet({
-    graf_mapa(vida_poblacion, input$indicador_vida, input$mapa_vida_anio)
-    
-  })
-  
-  ### Graficos de torta ------------------------
+  # Donas
   
   output$graf_torta_total <- renderPlotly({
-    graf_torta(Indicador_torta = input$indicador_vida_total, Año_torta = input$mapa_vida_anio, Pais_torta = input$vida_pais)
+    graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
+              Anio_dona = input$dona_vida_anio_1, indicador_dona = input$indicador_vida_total,
+              maximo = "")
+  })
+  
+  output$graf_torta_urbano <- renderPlotly({
+    graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
+              Anio_dona = input$dona_vida_anio_2, indicador_dona = input$indicador_vida_urbano,
+              maximo = "proporcion")
+  })
+  
+  output$graf_torta_rural <- renderPlotly({
+    graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
+              Anio_dona = input$dona_vida_anio_3, indicador_dona = input$indicador_vida_rural,
+              maximo = "proporcion")
   })
   
   ## Analisis -------------------------
@@ -1144,6 +1284,8 @@ shinyApp(ui = ui, server = server)
 
 # Ideas ------------------
 
+# https://es.statista.com/temas/9257/el-uso-de-internet-en-america-latina/#topFacts
+
 # Unir bases de datos: Poblacion-Vida, Ciencia-Educacion, Trabajo, pobreza (Salud no)
 
 # Dim1: Desarrollo, Educacion, Desigualdad
@@ -1155,12 +1297,18 @@ shinyApp(ui = ui, server = server)
 #  Dim 4: Inflación, Igualdad de genero+
 
 
-# Agregar un carrusel para mostrar los valores en el año de los indicadores extra en educacion
-
 # Agregar tasas de crecimiento decrecimiento 
 
 # Meter todos los plotlys en cajas? agregar anajo de cada caja la descripcion del indicador?
 
 # Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
 
-# Graficos de media dona para mostrar los porcentajes https://plotly.com/r/gauge-charts/
+# Series de tiempo para educacion hacer 
+
+# Arreglar-------------
+
+# en el carrusel los sliders de año tienen años en los que muchos paises no tienen datos
+
+# Colocalr todas las tablas en cajas, cambiar el tema de los graficos
+
+# Modificar el boton de play de los slider input con años
