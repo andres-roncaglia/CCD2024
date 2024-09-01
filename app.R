@@ -131,6 +131,7 @@ tema_graficos <- theme_minimal() +
 
 theme_set(tema_graficos)
 
+
 # Tema de las tablas --------------
 
 estilotablas <- function() {
@@ -241,7 +242,8 @@ mapa <- datos_mapa |>
   leaflet() |> 
   addTiles() |> 
   setMaxBounds(lng1 = -22, lng2 = -98, lat1 = -61, lat2 = 20) |> 
-  setView(lng = -58, lat = -23, zoom = 2.6)
+  setView(lng = -58, lat = -23, zoom = 2.6) |> 
+  addProviderTiles("Stadia.AlidadeSmoothDark")
 
 # Graficos --------------------
 
@@ -350,9 +352,14 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
   if (nrow(filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona)) <1) {
     graf <- ggplot(base_datos) +
       aes(x = 1, y = 1) +
-      annotate(geom = "text", label = "Sin información", x = 1, y = 1, size = 10) +
-      theme_void() +
-      theme(axis.line = element_blank())
+      annotate(geom = "text", label = "Sin información", x = 0, y = 0, size = 10) +
+      scale_x_continuous(limits = c(-3,3)) +
+      scale_y_continuous(limits = c(-3,3)) +
+      theme(axis.line = element_blank(),
+            panel.grid.major = element_blank(),
+            axis.title = element_blank(),
+            axis.text = element_blank(),
+            axis.ticks = element_blank())
     
     return(ggplotly(graf))
   }
@@ -381,13 +388,25 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
                                     filter(base_datos, Año == Anio_dona-1)$Valor,
                                     filter(base_datos, Año == Anio_dona)$Valor)),
     gauge = list(
-      axis =list(range = list(NULL, maximo)),
+      
+      bar = list(color = "#41cadb"),
+      
+      axis =list(range = list(NULL, maximo), tickcolor = "#bcc3c7"),
       
       steps = list(
         
-        list(range = c(0, max(base_datos$Valor)), color = "dodgerblue3"))
+        list(range = c(0, max(base_datos$Valor)), color = "#1B2845"))
       )) |> 
-    config(responsive = F)
+    config(responsive = F) |> 
+    layout(
+      
+      margin = list(l=30,r=40),
+      
+      paper_bgcolor = "#272c30",
+      
+      font = list(color = "#bcc3c7", family = "Arial"))
+  
+    
   
 }
 
@@ -413,13 +432,17 @@ carrusel_item <- function(indicador, num) {
           height = "300px",
           width = "100%",
           plotlyOutput(paste0("dona_carrusel_",num))),
-        back = div(
-          class = "text-center",
-          height = "300px",
-          width = "100%",
-          h1(indicador),
-          p(filter(Educacion, Indicador == indicador)$Descripción[1])
-        ))
+        back = box(width = NULL,title = indicador, height = 500, 
+                   style = "height: 500px; width: 100%; padding: 0; margin: 0;",
+                   p(filter(Educacion, Indicador == indicador)$Descripción[1])))
+        # div(
+        #   class = "text-center",
+        #   height = "99999999px",
+        #   width = "100%",
+        #   style = "background-color: #272c30; padding: 0; margin: 0;",
+        #   h1(indicador),
+        #   p(filter(Educacion, Indicador == indicador)$Descripción[1])
+        # ))
     )
   }
 
@@ -943,13 +966,10 @@ server <- function(input, output, session) {
             height = "300px",
             width = "100%",
             plotlyOutput(paste0("dona_carrusel_",num))),
-          back = div(
-            class = "text-center",
-            height = "300px",
-            width = "100%",
-            h1(indicador),
-            p(filter(Educacion, Indicador == indicador)$Descripción[1])
-          ))
+          back = box(width = NULL,title = indicador, height = 500, 
+                     style = "height: 500px; width: 100%; padding: 0; margin: 0;",
+                     p(filter(Educacion, Indicador == indicador)$Descripción[1]))
+          )
       )
     }
   })
@@ -974,7 +994,7 @@ server <- function(input, output, session) {
       ylab(label = input$indicador_educacion) +
       xlab(label = "Año") +
       scale_x_continuous(breaks = floor(seq(min(base_datos$Año), max(base_datos$Año), length.out = 6))) +
-      scale_color_manual(values = c("Mujeres" = "pink", "Varones" = "dodgerblue3", "Ambos sexos" = "gray30"))
+      scale_color_manual(values = c("Mujeres" = "pink", "Varones" = "dodgerblue3", "Ambos sexos" = "#FEFADC"))
     
     ggplotly(graf, tooltip = c("Año", "Valor", "color"), source = "plot_evo_educacion") |> 
       layout(legend = list(orientation = "h",   # Horizontal
@@ -1104,6 +1124,24 @@ server <- function(input, output, session) {
       choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_total)$Año)),
       selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == input$indicador_vida_total)$Año))
     )
+    
+    if (input$indicador_vida_total == "Población rural/urbana") {
+      updateSliderTextInput(
+        session = session,
+        inputId = "dona_vida_anio_1",
+        choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == "Población Urbana, total")$Año)),
+        selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == "Población Urbana, total")$Año))
+      )
+    } else if (input$indicador_vida_total == "Población inmigrante") {
+      updateSliderTextInput(
+        session = session,
+        inputId = "dona_vida_anio_1",
+        choices = sort(unique(filter(base_datos, Pais == input$vida_pais, Indicador == "Stock de migrantes internacionales a mitad de año, total")$Año)),
+        selected = max(unique(filter(base_datos, Pais == input$vida_pais, Indicador == "Stock de migrantes internacionales a mitad de año, total")$Año))
+      )
+    }
+      
+    
   })
   observeEvent(input$indicador_vida_urbano, {
     
@@ -1131,9 +1169,70 @@ server <- function(input, output, session) {
   # Donas
   
   output$graf_torta_total <- renderPlotly({
+    
     graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
               Anio_dona = input$dona_vida_anio_1, indicador_dona = input$indicador_vida_total,
-              maximo = "")
+              maximo = "proporcion")
+    
+    
+    
+    if (input$indicador_vida_total == "Población rural/urbana") {
+      
+      base_datos <- filter(vida_poblacion, Pais == input$vida_pais, Indicador == "Población rural, total" | Indicador == "Población Urbana, total") |> 
+        complete(Año = full_seq(Año, 1), Pais) |>  
+        fill(Valor, .direction = "down")
+      
+      
+      if (nrow(base_datos) <1) {
+        graf <- ggplot(base_datos) +
+          aes(x = 1, y = 1) +
+          annotate(geom = "text", label = "Sin información", x = 0, y = 0, size = 10) +
+          scale_x_continuous(limits = c(-3,3)) +
+          scale_y_continuous(limits = c(-3,3)) +
+          theme(axis.line = element_blank(),
+                panel.grid.major = element_blank(),
+                axis.title = element_blank(),
+                axis.text = element_blank(),
+                axis.ticks = element_blank())
+        
+        return(ggplotly(graf))
+      }
+      
+      plot_ly(
+        domain = list(x = c(0, 1), y = c(0, 1)),
+        value = filter(base_datos, Año == input$dona_vida_anio_1, Indicador == "Población Urbana, total")$Valor,
+        type = "indicator",
+        mode = "gauge+number+delta",
+        delta = list(reference = ifelse(nrow(filter(base_datos, Indicador == "Población Urbana, total", Año == input$dona_vida_anio_1-1)) > 0, 
+                                        filter(base_datos, Indicador == "Población Urbana, total", Año == input$dona_vida_anio_1-1)$Valor,
+                                        filter(base_datos, Indicador == "Población Urbana, total", Año == input$dona_vida_anio_1)$Valor)),
+        gauge = list(
+          bar = list(color = "#41cadb"),
+          axis =list(range = list(NULL, sum(filter(base_datos, Año == input$dona_vida_anio_1)$Valor)), tickcolor = "#bcc3c7"),
+          steps = list(
+            list(range = c(filter(base_datos, Año == input$dona_vida_anio_1, Indicador == "Población Urbana, total")$Valor ,sum(filter(base_datos, Año == input$dona_vida_anio_1)$Valor)),
+                 color = "#ACFF47"),
+            list(range = c(0, filter(base_datos, Año == input$dona_vida_anio_1, Indicador == "Población Urbana, total")$Valor),
+                 color = "#41cadb"))
+          )
+        ) |> 
+        config(responsive = F) |> 
+        layout(
+          margin = list(l=30,r=40),
+          paper_bgcolor = "#272c30",
+          font = list(color = "#bcc3c7", family = "Arial"))
+      
+      
+      
+    } else if (input$indicador_vida_total == "Población inmigrante") {
+      
+      graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
+                Anio_dona = input$dona_vida_anio_1, indicador_dona = "Stock de migrantes internacionales a mitad de año, total",
+                maximo = "")
+
+    }
+    
+    
   })
   
   output$graf_torta_urbano <- renderPlotly({
@@ -1371,6 +1470,8 @@ shinyApp(ui = ui, server = server)
 
 # Ideas ------------------
 
+# https://worldmigrationreport.iom.int/msite/wmr-2024-interactive/?lang=ES
+
 # https://es.statista.com/temas/9257/el-uso-de-internet-en-america-latina/#topFacts
 
 # Unir bases de datos: Poblacion-Vida, Ciencia-Educacion, Trabajo, pobreza (Salud no)
@@ -1393,6 +1494,8 @@ shinyApp(ui = ui, server = server)
 # Series de tiempo para educacion hacer 
 
 # Arreglar-------------
+
+# Data en hover me tira la info de la recta tmb, evitando que pueda comparar mas paises
 
 # en el carrusel los sliders de año tienen años en los que muchos paises no tienen datos
 
