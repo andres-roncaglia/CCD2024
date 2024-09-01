@@ -114,6 +114,50 @@ Trabajo <- prep(Trabajo) |> arrange(Pais)
 vida_poblacion <- rbind(Vida,Poblacion)
 ciencia_educacion <- rbind(Ciencia,Educacion)
 
+
+# Tema de los graficos -------------
+
+tema_graficos <- theme_minimal() +
+  theme(
+    plot.background = element_rect(fill = "#272c30", colour = NA),
+    panel.background = element_rect(fill = "#272c30"),
+    panel.grid.major = element_line(color = "grey5"),
+    legend.background = element_rect(fill = "grey15", colour = NA),
+    axis.text = element_text(color = "grey70", size = 8),
+    axis.title = element_text(color = "#bcc3c7", size = 11),
+    legend.text = element_text(color = "#bcc3c7", size = 9),
+    legend.title = element_text(color = "#bcc3c7", size = 11)
+  )
+
+theme_set(tema_graficos)
+
+# Tema de las tablas --------------
+
+estilotablas <- function() {
+  tags$head(
+    tags$style(HTML("
+      table.dataTable {
+        background-color: #272c30; /* Cambia el color de fondo de las tablas */
+      }
+      table.dataTable th {
+        background-color: #262626; /* Cambia el fondo de los encabezados */
+        color: #bcc3c7; /* Cambia el color del texto de los encabezados */
+      }
+      table.dataTable td {
+        color: #bcc3c7;                /* Color del texto en las celdas */
+      }
+      .dataTables_filter input {
+        background-color: #262626; /* Fondo de la caja de búsqueda */
+        color: #bcc3c7;               /* Color del texto en la caja de búsqueda */
+      }
+      .dataTables_filter label {
+        color: #bcc3c7; /* Cambia a cualquier color que prefieras */
+      }
+      
+    "))
+  )
+} 
+
 # Analisis de componentes principales -----------------------
 
 library(FactoMineR)
@@ -381,6 +425,18 @@ carrusel_item <- function(indicador, num) {
 
 
 
+# Datos historicos ----------------
+
+datos_historicos <- data.frame(
+  nom_periodo = c("El comienzo en el internet"),
+  
+  
+  
+  des_periodo = c("Se conforman las primeras conexiones por internet en la región. Brasil fue el primer país sudamericano en hacerlo mediante la creación de la Fundación de Amparo a la Investigación del Estado de São Paulo (FAPESP), que creó una red de internet con el objetivo inicial de conectar a los investigadores brasileños entre sí. Chile tuvo su primera conexión a internet en el año 1992 en el Centro de Computación de la Facultad de Ciencias Físicas y Matemáticas de la Universidad de Chile (CEC) mientras que Argentina logró conectar los sectores académicos a principios de 1994. <br> <br> Fuentes: <br> https://www.rnp.br/es/noticias/evolucion-de-la-internet-en-brasil <br> https://namidia.fapesp.br/cuando-llego-brasil-a-internet/482045 <br> https://www.latercera.com/que-pasa/noticia/transmitiendo-el-primer-paquete-ip-del-internet-chileno-a-30-anos-de-la-primera-conexion-en-la-web-del-pais/NGBLH3IE3RDFHKVCMNYRWI25KI/ <br> https://agencia.unq.edu.ar/?p=9623")
+)
+
+
+
 # Interfaz ------------
 
 
@@ -389,6 +445,7 @@ ui <- dashboardPage(
   
   dashboardHeader(),
   skin = "midnight",
+  
   ## Barra de opciones ----------------
   dashboardSidebar(collapsed = T,
                    sidebarMenu(
@@ -406,6 +463,7 @@ ui <- dashboardPage(
   
   
   dashboardBody(
+    estilotablas(),
     
     tabItems(
       
@@ -492,7 +550,7 @@ ui <- dashboardPage(
                 accordionItem(
                   title = "¡Que los datos te cuenten la historia!",
                   collapsed = F,
-                  textOutput("historia_ciencia")
+                  uiOutput("historia_ciencia")
                 )
               )
               
@@ -713,29 +771,31 @@ ui <- dashboardPage(
         
         h2("Bases de datos"),
         
-        fluidRow(
-          column(1),
-          
-          column(8,
-                 pickerInput(
-                   inputId = "base_datos",
-                   label = "Seleccionar Base de datos", 
-                   choices = c("Desarrollo", "Vida y población")
-                   )
-                 ),
-          column(2,
-                 downloadButton("datos_descarga", "Descargar")
-                 )
-          
-          
-        ),
+        box(width = 12,
+            fluidRow(
+              column(1),
+              
+              column(8,
+                     pickerInput(
+                       inputId = "base_datos",
+                       label = "Seleccionar Base de datos", 
+                       choices = c("Desarrollo", "Vida y población")
+                       )
+                     ),
+              column(2,
+                     downloadButton("datos_descarga", "Descargar")
+                     )
+              ),
+            
+            fluidRow(
+              column(1),
+              column(10,
+                     DTOutput("tabla_datos")
+                     )
+              )
+            )
         
-        fluidRow(
-          column(1),
-          column(10,
-            DTOutput("tabla_datos")
-                 )
-        )
+        
       )
       
     )
@@ -791,7 +851,27 @@ server <- function(input, output, session) {
     
     graf = graf_evolutivo(Ciencia, input$indicador_ciencia)
     
-    ggplotly(graf, tooltip = c("Año", "Valor", "color"))
+    #### Internet Que los datos te cuenten la historia ----------------------
+    if (str_detect(input$indicador_ciencia, "internet") | str_detect(input$indicador_ciencia, "Internet")) {
+      Periodos <- data.frame(
+        Comienzo = c(1990:1994, 1998:1999),
+        Periodo = c(rep("El comienzo en el internet", 5), rep("Evolucion", 2)))
+      
+      maximo <- max(filter(Ciencia, Indicador == input$indicador_ciencia)$Valor)
+      
+      graf <- graf +
+        geom_bar(data = Periodos, inherit.aes = F,
+                 aes(x= Comienzo, y = maximo, customdata = Periodo),
+                 stat = "identity", position = "stack", width = 1,
+                 fill = "cyan3", alpha = 0.3,
+                 just = 0) +
+        scale_x_continuous(limits = c(min(filter(Ciencia, Indicador == input$indicador_ciencia)$Año),
+                                      max(filter(Ciencia, Indicador == input$indicador_ciencia)$Año)))
+    }
+    
+    ggplotly(graf, tooltip = c("Año", "Valor", "color", "customdata"), source = "plot_evo_ciencia_click") |> 
+      event_register("plotly_click")
+    
   })
   
   ### Mapa ---------------------
@@ -822,12 +902,19 @@ server <- function(input, output, session) {
   
   ### Historia acordion -----------------
   
-  output$historia_ciencia <- renderText({
+  output$historia_ciencia <- renderUI({
     
-    if (T) {
-      "Clickea alguna zona marcada para conocer la historia."
+    click_data <- event_data("plotly_click", source = "plot_evo_ciencia_click")
+    
+    if (is.null(click_data)) {
+      HTML("Clickea alguna zona marcada para conocer la historia.")
+    } else if (click_data$customdata %in% datos_historicos$nom_periodo) {
+      HTML(filter(datos_historicos, nom_periodo == click_data$customdata)$des_periodo) 
+    } else {
+      HTML("Clickea alguna zona marcada para conocer la historia.")
     }
     
+
   })
   
   ###Funcion carrusel items -------------
@@ -1312,3 +1399,7 @@ shinyApp(ui = ui, server = server)
 # Colocalr todas las tablas en cajas, cambiar el tema de los graficos
 
 # Modificar el boton de play de los slider input con años
+
+# Arreglar grafico de correlaciones
+
+# Cambiar donde diga Variable a Indicador
