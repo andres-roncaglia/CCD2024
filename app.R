@@ -81,10 +81,12 @@ prep <- function(x) {
         T ~ Pais),
       Año = as.numeric(Año)) |> 
     left_join(Traducciones, by = "Indicador") |> 
-    mutate(Indicador = Trad) |> 
+    mutate(Indicator = Indicador,
+           Indicador = Trad) |> 
     select(-c("Trad")) |> 
     filter(!is.na(Valor)) # Saco las filas sin datos
-  
+    
+      
   # Dejo solo los indicadores que tengan al menos la misma cantidad de datos que de paises 
   for (i in unique(x$Indicador)) {
     data <- filter(x, Indicador == i, !is.na(Valor))
@@ -181,7 +183,7 @@ library(FactoMineR)
 datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Trabajo) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
-  select(!c(Año, Descripción)) |> 
+  select(!c(Año, Descripción, Indicator)) |> 
   pivot_wider(names_from = Indicador,
               values_from = Valor,
               values_fill = list(Valor = NA)) |> 
@@ -201,11 +203,11 @@ graf_aporte_cp <- as.data.frame(acp$eig) |>
   rename("Porcentaje de la variancia" = `percentage of variance`, "Porcentaje acumulado de la variancia" = `cumulative percentage of variance`) |> 
   ggplot(aes(x = 1:nrow(acp$eig), y = `Porcentaje de la variancia`, color = color)) +
   geom_line(color = "black") +
-  geom_point(aes(text = text),size = 3) +
+  geom_point(aes(text = text),size = 2) +
   xlab("Componente principal") +
   ylab("Variancia explicada por la componente (%)") +
   scale_x_continuous(breaks = 1:nrow(acp$eig)) +
-  scale_color_manual(values = c("Menor al 85%" = "forestgreen", "Mayor al 85%" = "firebrick3"),
+  scale_color_manual(values = c("Menor al 85%" = "#41cadb", "Mayor al 85%" = "firebrick2"),
                      breaks = c("Menor al 85%", "Mayor al 85%")) +
   labs(color = "Porcentaje acumulado de la variancia") +
   theme(legend.position = "bottom")
@@ -512,13 +514,15 @@ graf_areas_2 <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, p
 
 graf_bump <- function(dataset, indicador) {
   data_bump <- filter(dataset, Indicador == indicador) |>
+    complete(Año = full_seq(Año, 1), Pais) |>  
+    fill(Valor, .direction = "down") |> 
     group_by(Año) |> 
     mutate(pos = rank(Valor),
-           Posicion = abs(length(unique(data_bump$Pais)))-pos+1)
+           Posicion = abs(length(unique(Pais))-pos+1))
   
   plot_bump <- ggplot(data_bump) + 
     aes(x = Año, y = pos, color = Pais, ind = Valor, imp = Posicion) + 
-    geom_line(size = 1.5, lineend = "round", linejoin = "round")+
+    geom_line(linewidth = 1.5, lineend = "round", linejoin = "round")+
     geom_point(size = 6) +
     theme(axis.title.y = element_blank(),
           axis.ticks.y = element_blank(),
@@ -557,9 +561,37 @@ graf_bump <- function(dataset, indicador) {
 }
 
 
+## Lollipop comparativo -----------------------
 
-## Hacer que las lineas se formen con una scala logaritmica o cubica, reemplazar los puntos por los valores,
-# agregar en la leyenda el valor ademas de la posicion
+graf_lollipop <- function(dataset, indicador, orden, anio) {
+  
+  data_lollipop <- filter(dataset, str_detect(Indicador, indicador), Año == anio)
+  
+  
+  if (orden == "Máximo valor") {
+    level <- unique(arrange(data_lollipop, desc(Valor))$Pais)
+  } else {
+    level <- data_lollipop |> 
+      group_by(Pais) |> 
+      summarise(n = abs(diff(Valor))) |> 
+      arrange(desc(n))
+    level <- unique(level$Pais)
+  }
+  
+  
+  graf_lollipop <- data_lollipop |> 
+    mutate(Pais = factor(Pais, levels = rev(level))) |> 
+    ggplot() +
+    aes(group = Pais, x = Valor, y = Pais, color = Indicador) + 
+    geom_line(color = "#bcc3c7")  +
+    geom_point(size = 3) +
+    scale_color_manual(values = set_names(c("#F1C8DB", "#41cadb"), c(filter(data_lollipop, str_detect(Indicador, "femeni"))$Indicador[1],
+                                                                     filter(data_lollipop, str_detect(Indicador, "mascu"))$Indicador[1]))) +
+    xlab(label = indicador) +
+    theme(legend.position = "none")
+  
+  ggplotly(graf_lollipop, tooltip = c("y", "Valor", "Indicador"))
+}
 
 
 # Items del carrusel ------------
@@ -649,7 +681,7 @@ ui <- dashboardPage(
         tabName = "pag_principal",
         
         h2("Que los datos te cuenten la historia", style = "text-align: center;"),
-        p("Los países del sur de América fueron siempre afectados por las políticas de países exteriores a la zona"),
+        h5("Explora de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
         
         # Video Youtube
         div(
@@ -689,7 +721,7 @@ ui <- dashboardPage(
           )
         ), br(),
         h2("Aclaraciones"),
-        p("Al estar en inglés y por cuestiones de tiempo los indicadores y sus descripciones fueron traducidas con la ayuda de inteligencia artificial, por lo que puede que las traducciones no sean coherentes. Para acceder a los indicadores en idioma original referirse a la pestaña de bases de datos y si lo desea buscarlo en la página de donde se extrajeron los datos.")
+        p("Al estar en inglés, y por cuestiones de tiempo, ciertos indicadores y sus descripciones fueron traducidas con la ayuda de inteligencia artificial, por lo que puede que las traducciones no sean coherentes, no estén del todo claras o no sean precisas. Para acceder a los indicadores en idioma original referirse a la pestaña de bases de datos y si lo desea buscarlo en la página de donde se extrajeron estos.")
         
       ),
       
@@ -927,6 +959,7 @@ ui <- dashboardPage(
       tabItem(
         tabName = "economia",
         h2("Economía"), 
+        # Grafico bump
         box(width = 12,
             pickerInput(inputId = "indicador_economia_bump",
                         label = "Indicador",
@@ -944,6 +977,7 @@ ui <- dashboardPage(
                 textOutput("descripcion_indicador_economia_bump")
               ))
             ),
+        # Grafico de areas
         box(width = 12,
             pickerInput(inputId = "indicador_economia_areas",
                         label = "Indicador",
@@ -951,13 +985,37 @@ ui <- dashboardPage(
                           "Distribución del empleo",
                           "Distribución de tamaño de empresas"
                         )), br(),
-            plotlyOutput("graf_areas"),
+            plotlyOutput("graf_areas")
+            ),
+        
+        # Grafico lollipop
+        box(width = 6,
+            column(8,pickerInput(inputId = "indicador_economia_lollipop",
+                        label = "Indicador",
+                        choices = c(
+                          "Tasa de participación en la fuerza laboral",
+                          "Ingreso Nacional Bruto per cápita"
+                        ))),
+            column(4,
+                   pickerInput(inputId = "orden_economia_lollipop",
+                               label = "Orden",
+                               choices = c(
+                                 "Máximo valor",
+                                 "Máxima diferencia"
+                               ))),
+            sliderTextInput(inputId = "anio_economia_lollipop",
+                            label = "Año",
+                            grid = T,
+                            choices = sort(unique(filter(Economia, str_detect(Indicador,"Tasa de participación en la fuerza laboral"))$Año)),
+                            selected = max(unique(filter(Economia, str_detect(Indicador,"Tasa de participación en la fuerza laboral"))$Año))),
+            
+            plotlyOutput("lollipop_economia"),
             accordion(
-              id = "acordion_economia_area",
+              id = "acordion_economia_lollipop",
               accordionItem(
                 title = "Descripción del indicador",
                 collapsed = F,
-                uiOutput("descripcion_indicador_economia_area")
+                textOutput("des_lollipop_economia")
               ))
             )
         
@@ -969,7 +1027,7 @@ ui <- dashboardPage(
       tabItem(
         tabName = "analisis",
         h2("Analisis de datos"), br(),
-        h4("Componentes principales y clustering"), br(),
+        h4("Análisis de correlaciones"), br(),
         
         fluidRow(
           column(7,
@@ -983,7 +1041,7 @@ ui <- dashboardPage(
                      Poblacion = unique(Poblacion$Indicador), 
                      Pobreza = unique(Pobreza$Indicador), 
                      Trabajo = unique(Trabajo$Indicador)
-                   ), selected = "Access to internet, percent of population",
+                   ), selected = "Empleo fuera del sector formal por sexo (miles), Total",
                    options = list(
                      `live-search` = TRUE,
                      size = 7))
@@ -996,18 +1054,16 @@ ui <- dashboardPage(
                      Poblacion = unique(Poblacion$Indicador), 
                      Pobreza = unique(Pobreza$Indicador), 
                      Trabajo = unique(Trabajo$Indicador)
-                   ), selected = "Economic Inequality Score",
+                   ), selected = "Tasa de desempleo",
                    options = list(
                      `live-search` = TRUE,
                      size = 7))
                  ),
                  fluidRow(
-                   sliderInput(inputId = "anio_corr",
+                   sliderTextInput(inputId = "anio_corr",
                                label = "Año",
-                               min = 1960,
-                               max = 2022,
-                               value = 2022
-                   )
+                               choices = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022),
+                               selected = 2022)
                  ),
                  fluidRow(
                    valueBoxOutput("caja_correlaciones", width = 11)
@@ -1553,30 +1609,45 @@ server <- function(input, output, session) {
     
   })
   
+  ### Lolliepop Economia ------------
+  
+  output$lollipop_economia <- renderPlotly({
+    graf_lollipop(dataset = Economia, indicador = input$indicador_economia_lollipop,
+                  orden = input$orden_economia_lollipop, anio = input$anio_economia_lollipop)
+    
+  })
+  
   ### Descripcion acordion Economia -----------------
   
   output$descripcion_indicador_economia_bump <- renderText({
-    filter(Economia, str_detect(Indicador, input$indicador_economia_bump))$Descripción[1]
+    filter(Economia, Indicador == input$indicador_economia_bump)$Descripción[1]
   })
   
-  output$descripcion_indicador_economia_area <- renderUI({
-    
-    if (input$indicador_economia_areas == "Distribución del empleo") {
-      HTML(paste(filter(Economia, Indicador == "Empleo en grandes empresas, % del total")$Descripción[1],
-            filter(Economia, Indicador == "Empleo en microempresas, % del total")$Descripción[1],
-            filter(Economia, Indicador == "Empleo en PYMEs, % del total")$Descripción[1],
-            sep = "<br> <br>"))
-    } else {
-      HTML(paste(filter(Economia, Indicador == "Grandes empresas, % del total de empresas")$Descripción[1],
-            filter(Economia, Indicador == "Empresas medianas, % del total de empresas")$Descripción[1],
-            filter(Economia, Indicador == "Pequeñas empresas, % del total de empresas")$Descripción[1],
-            filter(Economia, Indicador == "Microempresas, % del total de empresas")$Descripción[1],
-            sep = "<br> <br>"))
-    }
-    
+  output$des_lollipop_economia <- renderText({
+    filter(Economia, str_detect(Indicador,input$indicador_economia_lollipop))$Descripción[1]
   })
   
   ## Analisis -------------------------
+  
+  observeEvent(list(input$var_corr_1,input$var_corr_2), {
+    anios <- rbind(ciencia_educacion,vida_poblacion,Pobreza, Trabajo, Economia) |> 
+      filter(Indicador == input$var_corr_1 | Indicador == input$var_corr_2) |> 
+      group_by(Año) |> 
+      summarise(n = length(unique(Indicador))) |> 
+      filter(n == 2)
+    
+    anios <- sort(unique(anios$Año))
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "anio_corr",
+      label = "Año",
+      choices = anios,
+      selected = max(anios)
+    )
+    
+  }, ignoreNULL = FALSE)
+  
   
   ### Grafico correlaciones ----------------
   
@@ -1637,6 +1708,7 @@ server <- function(input, output, session) {
       graf <- graf +
         annotate(geom = "text", 
                  label = "Pocos datos que coincidan con los filtros aplicados",
+                 color = "white",
                  x = 1,
                  y = 1
         )
@@ -1830,10 +1902,10 @@ shinyApp(ui = ui, server = server)
 
 # en el carrusel los sliders de año tienen años en los que muchos paises no tienen datos
 
-# Colocalr todas las tablas en cajas, cambiar el tema de los graficos
-
 # Modificar el boton de play de los slider input con años
 
 # Arreglar grafico de correlaciones
 
 # Cambiar donde diga Variable a Indicador
+
+# Filtrar en cada base de datos los indicadores únicos y que correspondan a cada base
