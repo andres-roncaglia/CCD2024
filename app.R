@@ -152,7 +152,21 @@ estilotablas <- function() {
         color: #bcc3c7;               /* Color del texto en la caja de búsqueda */
       }
       .dataTables_filter label {
-        color: #bcc3c7; /* Cambia a cualquier color que prefieras */
+        color: #bcc3c7; 
+      }
+      
+      
+      /* Configuraciones botones ActionBttn */
+      
+      .my-custom-btn {
+        background-color: #272c30 !important;
+        color: #bcc3c7 !important;
+        border-color: #272c30 !important;
+      }
+      .my-custom-btn:hover {
+        background-color: #272c30 !important;
+        color: black !important;
+        border-color: #272c30 !important;
       }
       
     "))
@@ -301,49 +315,6 @@ graf_mapa = function(base_datos, indicador, anio) {
   
 }
 
-## Graf torta ---------
-
-graf_torta <- function(Indicador_torta, Año_torta, Pais_torta) {
-  datos_torta <- NULL
-  datos_torta<- vida_poblacion |> 
-    mutate(Valor = Valor/100 * filter(vida_poblacion, Pais == Pais_torta,Indicador == "Población, total", Año == Año_torta)$Valor) |> 
-    filter(str_detect(Indicador, "%") | str_detect(Indicador, "porcentaje") | str_detect(Indicador, "Porcentaje"),
-           Pais == Pais_torta, Año == Año_torta)
-
-  datos_torta <- datos_torta |> mutate(Par = 1:nrow(datos_torta))
-  
-  datos_torta_complemento <- datos_torta |> 
-    mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor),
-           Indicador = paste("No", Indicador))
-
-  datos_torta <- bind_rows(datos_torta,datos_torta_complemento) |> 
-    filter(Par == filter(datos_torta, Indicador == Indicador_torta)$Par[1])
-
-  if (str_detect(Indicador_torta, "Población rural/urbana")) {
-    datos_torta <- vida_poblacion |>
-      filter(Pais == Pais_torta,Indicador == "Población rural, total" | Indicador == "Población Urbana, total", Año == Año_torta)
-  } else if (str_detect(Indicador_torta, "Población inmigrante")) {
-    datos_torta <- vida_poblacion |>
-      filter(Pais == Pais_torta,Indicador == "Stock de migrantes internacionales a mitad de año, total", Año == Año_torta) |> 
-      mutate(Indicador = "Migrantes")
-
-    datos_torta_complemento <- datos_torta |>
-      mutate(Valor = abs(Valor - filter(vida_poblacion, Indicador == "Población, total", Pais == Pais_torta, Año == Año_torta)$Valor),
-             Indicador = "Población oriunda")
-
-    datos_torta <- bind_rows(datos_torta, datos_torta_complemento)
-
-  }
-  print(datos_torta)
-  datos_torta |> 
-    plot_ly(labels = ~Indicador, values = ~Valor, type = 'pie',
-            textposition = 'inside',
-            textinfo = 'label+percent',
-            insidetextfont = list(color = '#FFFFFF'),
-            marker = list(colors = colors,
-                          line = list(color = '#FFFFFF', width = 1)),
-            showlegend = FALSE)
-}
 
 ## Graf semi torta -------------
 
@@ -409,6 +380,189 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
     
   
 }
+
+## Graf areas empleo --------------
+datos_graf_areas <- filter(Economia, str_detect(Indicador, "Empleo en "), Indicador != "Empleo en MIPYMES, % del total", Pais != "Paraguay")
+
+i <- 1
+
+for (pais in unique(datos_graf_areas$Pais)) {
+  datos_graf_areas_pais <- filter(datos_graf_areas, Pais == pais)
+  
+  graf_areas <- plot_ly(x = unique(datos_graf_areas_pais$Año), y = filter(datos_graf_areas_pais, Indicador == "Empleo en grandes empresas, % del total")$Valor, name = 'Empleo en grandes empresas', type = 'scatter', mode = 'none', stackgroup = 'one', groupnorm = 'percent', fillcolor = '#ACFF47') |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Empleo en microempresas, % del total")$Valor, name = 'Empleo en microempresas', fillcolor = '#6D64B9', opacity = 0.3) |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Empleo en PYMEs, % del total")$Valor, name = 'Empleo en PYMEs', fillcolor = '#41cadb', opacity = 0.3) |> 
+    layout(
+      font = list(color = "#bcc3c7", family = "Arial"),
+      margin = list(l = 0, r = 0),
+      paper_bgcolor = "#272c30",
+      plot_bgcolor ="#272c30",
+      showlegend = F,
+      xaxis = list(showgrid = FALSE,
+                   fixedrange = T,
+                   range = list(min(unique(datos_graf_areas_pais$Año)), max(unique(datos_graf_areas_pais$Año)))),
+      yaxis = list(
+        range = list(0,102),
+        fixedrange = T,
+        title = NULL,
+        zeroline = FALSE,      # Remove the zero line
+        showline = FALSE,      # Remove the axis line
+        showgrid = FALSE,      # Remove grid lines
+        ticks = "",            # Remove ticks
+        showticklabels = FALSE, # Already removed the tick labels
+        automargin = T,
+        ticksuffix = '%'    # Adjust margins automatically
+      ),
+      shapes = list(
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 20, y1 = 20, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 40, y1 = 40, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 60, y1 = 60, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 80, y1 = 80, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 50, y1 = 50, 
+             line = list(color = "#272c30"))
+      ),
+      annotations = list(
+        list(x = median(datos_graf_areas_pais$Año), y = 102, text = pais, showarrow = FALSE, xanchor = 'middle', font = list(size = 14,color = "#bcc3c7")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 20+2, text = "20%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 40+2, text = "40%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 60+2, text = "60%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 80+2, text = "80%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30"))
+        ),
+      hoverlabel = list(font = list(size = 15, color = "#bcc3c7"),
+                        namelength = -1),
+      hovermode = "x unified"
+      )
+  assign(paste0("plot_areas_",i), graf_areas)
+  i = i+1
+}
+
+graf_areas <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, plot_areas_5, plot_areas_6,
+        nrows = 1)
+
+
+
+datos_graf_areas <- filter(Economia, str_detect(Indicador, "% del total de empresas"), Indicador != "MIPYMES, % del total de empresas",Indicador != "PYMEs, % del total de empresas", Pais != "Paraguay", Pais != "Venezuela")
+
+i <- 1
+
+for (pais in unique(datos_graf_areas$Pais)) {
+  datos_graf_areas_pais <- filter(datos_graf_areas, Pais == pais)
+  
+  graf_areas_2 <- plot_ly(x = unique(datos_graf_areas_pais$Año), y = filter(datos_graf_areas_pais, Indicador == "Grandes empresas, % del total de empresas")$Valor, name = 'Grandes empresas', type = 'scatter', mode = 'none', stackgroup = 'one', groupnorm = 'percent', fillcolor = '#ACFF47') |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Empresas medianas, % del total de empresas")$Valor, name = 'Empresas medianas', fillcolor = '#6D64B9', opacity = 0.3) |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Pequeñas empresas, % del total de empresas")$Valor, name = 'Pequeñas empresas', fillcolor = '#41cadb', opacity = 0.3) |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Microempresas, % del total de empresas")$Valor, name = 'Microempresas', fillcolor = '#F1C8DB', opacity = 0.3) |> 
+    layout(
+      font = list(color = "#bcc3c7", family = "Arial"),
+      margin = list(l = 0, r = 0),
+      paper_bgcolor = "#272c30",
+      plot_bgcolor ="#272c30",
+      showlegend = F,
+      xaxis = list(showgrid = FALSE,
+                   fixedrange = T,
+                   range = list(min(unique(datos_graf_areas_pais$Año)), max(unique(datos_graf_areas_pais$Año)))),
+      yaxis = list(
+        range = list(0,102),
+        fixedrange = T,
+        title = NULL,
+        zeroline = FALSE,      # Remove the zero line
+        showline = FALSE,      # Remove the axis line
+        showgrid = FALSE,      # Remove grid lines
+        ticks = "",            # Remove ticks
+        showticklabels = FALSE, # Already removed the tick labels
+        automargin = T,
+        ticksuffix = '%'    # Adjust margins automatically
+      ),
+      shapes = list(
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 20, y1 = 20, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 40, y1 = 40, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 60, y1 = 60, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 80, y1 = 80, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 50, y1 = 50, 
+             line = list(color = "#272c30"))
+      ),
+      annotations = list(
+        list(x = median(datos_graf_areas_pais$Año), y = 102, text = pais, showarrow = FALSE, xanchor = 'middle', font = list(size = 14,color = "#bcc3c7")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 20+2, text = "20%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 40+2, text = "40%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 60+2, text = "60%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 80+2, text = "80%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30"))
+      ),
+      hoverlabel = list(font = list(size = 15, color = "#bcc3c7"),
+                        namelength = -1),
+      hovermode = "x unified"
+    )
+  assign(paste0("plot_areas_",i), graf_areas_2)
+  i = i+1
+}
+
+graf_areas_2 <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, plot_areas_5, plot_areas_6,plot_areas_7,
+                      nrows = 1)
+
+
+## Bump chart ----------------------------
+
+graf_bump <- function(dataset, indicador) {
+  data_bump <- filter(dataset, Indicador == indicador) |>
+    group_by(Año) |> 
+    mutate(pos = rank(Valor),
+           Posicion = abs(length(unique(data_bump$Pais)))-pos+1)
+  
+  plot_bump <- ggplot(data_bump) + 
+    aes(x = Año, y = pos, color = Pais, ind = Valor, imp = Posicion) + 
+    geom_line(size = 1.5, lineend = "round", linejoin = "round")+
+    geom_point(size = 6) +
+    theme(axis.title.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank())
+  
+  anotaciones_plotly <- list()
+  j <- 1
+  for(i in 1:length(unique(data_bump$Pais))) {
+    anotaciones_plotly[[j]] <- list(
+      x = min(data_bump$Año)-1,
+      y = filter(data_bump, Año == min(data_bump$Año))$pos[i],
+      text = filter(data_bump, Año == min(data_bump$Año))$Pais[i],
+      showarrow = FALSE,
+      xanchor = 'right',
+      font = list(color = "white")
+    )
+    anotaciones_plotly[[j+1]] <- list(
+      x = max(data_bump$Año)+1,
+      y = filter(data_bump, Año == max(data_bump$Año))$pos[i],
+      text = filter(data_bump, Año == max(data_bump$Año))$Pais[i],
+      showarrow = FALSE,
+      xanchor = 'left',
+      font = list(color = "#bcc3c7")
+    )
+    j <- j+2
+  }
+  
+  
+  ggplotly(plot_bump, tooltip = c("Pais", "Año", "Valor", "Posicion")) |> 
+    layout(showlegend = F,
+           xaxis = list(fixedrange = T,
+                        range = list(min(data_bump$Año)-4, max(data_bump$Año)+4)),
+           yaxis = list(fixedrange = T),
+           font = list (color = "#bcc3c7"),
+           annotations = anotaciones_plotly)
+}
+
+
+
+## Hacer que las lineas se formen con una scala logaritmica o cubica, reemplazar los puntos por los valores,
+# agregar en la leyenda el valor ademas de la posicion
+
+
+# Items del carrusel ------------
 
 carrusel_item <- function(indicador, num) {
     carouselItem(
@@ -497,37 +651,45 @@ ui <- dashboardPage(
         h2("Que los datos te cuenten la historia", style = "text-align: center;"),
         p("Los países del sur de América fueron siempre afectados por las políticas de países exteriores a la zona"),
         
+        # Video Youtube
+        div(
+          style = "display: flex; justify-content: center;",
+          HTML('<iframe width="60%" height="300" src="https://www.youtube.com/embed/zG8WQ29_kkU?si=0lf053cmNaI11Wbr" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
+        ),
+        br(),
         ## Primera hilera de botones ---------------------
         fluidRow(
           column(3,
-                 actionBttn("ciencia", "Desarrollo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("ciencia", "Desarrollo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("vida", "Vida y Población", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("vida", "Vida y Población", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("economia", "Economia", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("economia", "Economia", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("educacion", "Pobreza", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("educacion", "Pobreza", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           )
-        ),
+        ), br(),
         
         ## Segunda hilera de botones ---------------------
         fluidRow(
           column(3,
-                 actionBttn("trabajo", "Trabajo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("trabajo", "Trabajo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("datos", "Datos y Glosario", block = T, style = "fill", size = "lg", no_outline = F, color = "royal"),
+                 actionBttn("datos", "Datos y Glosario", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(3,
-                 actionBttn("github", "Github", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", icon = icon("github"))
+                 actionBttn("github", "Github", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", icon = icon("github"))
           )
-        ),
+        ), br(),
+        h2("Aclaraciones"),
+        p("Al estar en inglés y por cuestiones de tiempo los indicadores y sus descripciones fueron traducidas con la ayuda de inteligencia artificial, por lo que puede que las traducciones no sean coherentes. Para acceder a los indicadores en idioma original referirse a la pestaña de bases de datos y si lo desea buscarlo en la página de donde se extrajeron los datos.")
         
       ),
       
@@ -644,7 +806,8 @@ ui <- dashboardPage(
         tabName = "vida",
         h2("Población y vida"),
         
-        fluidRow(
+        box(width = 12,
+          fluidRow(
           column(10,
                  pickerInput(inputId = "indicador_vida",
                              label = "Variable",
@@ -652,64 +815,152 @@ ui <- dashboardPage(
                                         "Índice de pobreza multidimensional",
                                         "Población de refugiados por país o territorio de asilo"))
                  )
-        ),
+          ),
         
         fluidRow(
           column(width = 10, offset = 1, plotlyOutput("plot_evo_vida"))
-          
+          ),
+        accordion(
+          id = "acordion_vida",
+          accordionItem(
+            title = "Descripción del indicador",
+            collapsed = F,
+            textOutput("descripcion_indicador_vida")
+          ),
+          accordionItem(
+            title = "¡Que los datos te cuenten la historia!",
+            collapsed = F,
+            textOutput("historia_vida")
+            )
+          )
         ),
         br(),
-        fluidRow(column(4,
-                        pickerInput(inputId = "vida_pais",
-                                    label = "País",
-                                    unique(vida_poblacion$Pais))),
-                 ),
         
-        fluidRow(
-          column(4, box(width = NULL,
-                        pickerInput(inputId = "indicador_vida_total",
-                                    label = "Población total",
-                                    choices = c("Población rural/urbana" ,unique(filter(vida_poblacion, 
-                                                                                        str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
-                                    )$Indicador),
-                                    "Población inmigrante")), br(),
-                        sliderTextInput(inputId = "dona_vida_anio_1",
-                                        label = "Año",
-                                        grid = T,
-                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año)),
-                                        selected = max(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año))
-                        ),
-                        plotlyOutput("graf_torta_total")
-                        )),
-          column(4, box(width = NULL,
-                        pickerInput(inputId = "indicador_vida_urbano",
-                                    label = "Población Urbana",
-                                    choices = c(unique(filter(vida_poblacion, 
-                                                              str_detect(Indicador, ", urbano, porcentaje") | str_detect(Indicador, "\\(% de la población urbana\\)") | str_detect(Indicador, "% de la población urbana"),
-                                    )$Indicador))), br(),
-                        sliderTextInput(inputId = "dona_vida_anio_2",
-                                        label = "Año",
-                                        grid = T,
-                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año)),
-                                        selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año))
-                        ),
-                        plotlyOutput("graf_torta_urbano")
-                        )),
-          column(4, box(width = NULL,
-                        pickerInput(inputId = "indicador_vida_rural",
-                                    label = "Población Rural",
-                                    choices = c(unique(filter(vida_poblacion, 
-                                                              str_detect(Indicador, ", rural, porcentaje") | str_detect(Indicador, "\\(% de la población rural\\)") | str_detect(Indicador, "% de la población rural"),
-                                    )$Indicador))), br(),
-                        sliderTextInput(inputId = "dona_vida_anio_3",
-                                        label = "Año",
-                                        grid = T,
-                                        choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año)),
-                                        selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año))
-                        ),
-                        plotlyOutput("graf_torta_rural")
-                        ))
-        ),
+        box(width = 12,
+            
+            fluidRow(column(4,
+                            pickerInput(inputId = "vida_pais",
+                                        label = "País",
+                                        unique(vida_poblacion$Pais)))
+            ),
+            
+            fluidRow(
+              column(4,
+                     pickerInput(inputId = "indicador_vida_total",
+                                 label = "Población total",
+                                 choices = c("Población rural/urbana" ,unique(filter(vida_poblacion, 
+                                                                                     str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
+                                 )$Indicador),
+                                 "Población inmigrante")), br(),
+                     sliderTextInput(inputId = "dona_vida_anio_1",
+                                     label = "Año",
+                                     grid = T,
+                                     choices = sort(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año)),
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año))
+                     ),
+                     flipBox(
+                       id = "dona_vida_1",
+                       width = 12,
+                       front = div(
+                         class = "d-flex justify-content-center",
+                         height = "300px",
+                         width = "100%",
+                         plotlyOutput("graf_torta_total")),
+                       back = uiOutput("des_dona_1"))
+                            
+              ),
+              column(4, 
+                     pickerInput(inputId = "indicador_vida_urbano",
+                                 label = "Población Urbana",
+                                 choices = c(unique(filter(vida_poblacion, 
+                                                           str_detect(Indicador, ", urbano, porcentaje") | str_detect(Indicador, "\\(% de la población urbana\\)") | str_detect(Indicador, "% de la población urbana"),
+                                 )$Indicador))), br(),
+                     sliderTextInput(inputId = "dona_vida_anio_2",
+                                     label = "Año",
+                                     grid = T,
+                                     choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año)),
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año))
+                     ),
+                     flipBox(
+                       id = "dona_vida_2",
+                       width = 12,
+                       front = div(
+                         class = "d-flex justify-content-center",
+                         height = "300px",
+                         width = "100%",
+                         plotlyOutput("graf_torta_urbano")),
+                       back = uiOutput("des_dona_2"))
+                     
+              ),
+              column(4, 
+                     pickerInput(inputId = "indicador_vida_rural",
+                                 label = "Población Rural",
+                                 choices = c(unique(filter(vida_poblacion, 
+                                                           str_detect(Indicador, ", rural, porcentaje") | str_detect(Indicador, "\\(% de la población rural\\)") | str_detect(Indicador, "% de la población rural"),
+                                 )$Indicador))), br(),
+                     sliderTextInput(inputId = "dona_vida_anio_3",
+                                     label = "Año",
+                                     grid = T,
+                                     choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año)),
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año))
+                     ),
+                     flipBox(
+                       id = "dona_vida_3",
+                       width = 12,
+                       front = div(
+                         class = "d-flex justify-content-center",
+                         height = "300px",
+                         width = "100%",
+                         plotlyOutput("graf_torta_rural")),
+                       back = uiOutput("des_dona_3")
+                       )
+                       
+                     )
+              )
+            
+            )
+        
+      ),
+      
+      # Pagina Economia -------------------
+      
+      tabItem(
+        tabName = "economia",
+        h2("Economía"), 
+        box(width = 12,
+            pickerInput(inputId = "indicador_economia_bump",
+                        label = "Indicador",
+                        choices = c(
+                          "Ingreso Nacional Bruto per cápita (PPP$ 2017)",
+                          "Desigualdad en ingresos",
+                          "Índice de estricta respuesta gubernamental"
+                        )), br(),
+            plotlyOutput("graf_bump_economia"),
+            accordion(
+              id = "acordion_economia_bump",
+              accordionItem(
+                title = "Descripción del indicador",
+                collapsed = F,
+                textOutput("descripcion_indicador_economia_bump")
+              ))
+            ),
+        box(width = 12,
+            pickerInput(inputId = "indicador_economia_areas",
+                        label = "Indicador",
+                        choices = c(
+                          "Distribución del empleo",
+                          "Distribución de tamaño de empresas"
+                        )), br(),
+            plotlyOutput("graf_areas"),
+            accordion(
+              id = "acordion_economia_area",
+              accordionItem(
+                title = "Descripción del indicador",
+                collapsed = F,
+                uiOutput("descripcion_indicador_economia_area")
+              ))
+            )
+        
         
       ),
       
@@ -1113,6 +1364,44 @@ server <- function(input, output, session) {
   
   ### Graficos dona poblacion ------------------------
   
+  # Descripcion indicador 
+  
+  output$des_dona_1 <- renderUI({
+  
+    
+    if (input$indicador_vida_total == "Población rural/urbana") {
+      descripcion_indicador <- paste(filter(vida_poblacion, Indicador == "Población Urbana, total")$Descripción[1],
+                                     "
+                                     ",
+                                     filter(vida_poblacion, Indicador == "Población rural, total")$Descripción[1])
+    } else if (input$indicador_vida_total == "Población inmigrante") {
+      descripcion_indicador <- filter(vida_poblacion, Indicador == "Stock de migrantes internacionales a mitad de año, total")$Descripción[1]
+    } else {
+      descripcion_indicador <- filter(vida_poblacion, Indicador == input$indicador_vida_total)$Descripción[1]
+    }
+    
+    box(width = NULL,title = input$indicador_vida_total, height = "1000px", 
+        style = "height: 360px; width: 100%; padding: 0; margin: 0;",
+        p(descripcion_indicador))
+    
+  })
+  
+  output$des_dona_2 <- renderUI({
+    
+    box(width = NULL,title = input$indicador_vida_urbano, height = "1000px", 
+        style = "height: 360px; width: 100%; padding: 0; margin: 0;",
+        p(filter(vida_poblacion, Indicador == input$indicador_vida_urbano)$Descripción[1]))
+    
+  })
+  
+  output$des_dona_3 <- renderUI({
+    
+    box(width = NULL,title = input$indicador_vida_rural, height = "1000px", 
+        style = "height: 360px; width: 100%; padding: 0; margin: 0;",
+        p(filter(vida_poblacion, Indicador == input$indicador_vida_rural)$Descripción[1]))
+    
+  })
+  
   # Actualizador de la barra para seleccionar año
   observeEvent(input$indicador_vida_total, {
     
@@ -1170,12 +1459,6 @@ server <- function(input, output, session) {
   
   output$graf_torta_total <- renderPlotly({
     
-    graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
-              Anio_dona = input$dona_vida_anio_1, indicador_dona = input$indicador_vida_total,
-              maximo = "proporcion")
-    
-    
-    
     if (input$indicador_vida_total == "Población rural/urbana") {
       
       base_datos <- filter(vida_poblacion, Pais == input$vida_pais, Indicador == "Población rural, total" | Indicador == "Población Urbana, total") |> 
@@ -1230,6 +1513,10 @@ server <- function(input, output, session) {
                 Anio_dona = input$dona_vida_anio_1, indicador_dona = "Stock de migrantes internacionales a mitad de año, total",
                 maximo = "")
 
+    } else {
+      graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
+                Anio_dona = input$dona_vida_anio_1, indicador_dona = input$indicador_vida_total,
+                maximo = "proporcion")
     }
     
     
@@ -1245,6 +1532,48 @@ server <- function(input, output, session) {
     graf_dona(base_datos = vida_poblacion, Pais_dona = input$vida_pais, 
               Anio_dona = input$dona_vida_anio_3, indicador_dona = input$indicador_vida_rural,
               maximo = "proporcion")
+  })
+  
+  ## Economia -------------------------
+  
+  ### Bump plot --------------
+  
+  output$graf_bump_economia <- renderPlotly({
+    graf_bump(dataset = Economia, indicador = input$indicador_economia_bump)
+  })
+  
+  ### Grafico de areas --------------
+  
+  output$graf_areas <- renderPlotly({
+    if (input$indicador_economia_areas == "Distribución del empleo"){
+      graf_areas
+    } else {
+      graf_areas_2
+    }
+    
+  })
+  
+  ### Descripcion acordion Economia -----------------
+  
+  output$descripcion_indicador_economia_bump <- renderText({
+    filter(Economia, str_detect(Indicador, input$indicador_economia_bump))$Descripción[1]
+  })
+  
+  output$descripcion_indicador_economia_area <- renderUI({
+    
+    if (input$indicador_economia_areas == "Distribución del empleo") {
+      HTML(paste(filter(Economia, Indicador == "Empleo en grandes empresas, % del total")$Descripción[1],
+            filter(Economia, Indicador == "Empleo en microempresas, % del total")$Descripción[1],
+            filter(Economia, Indicador == "Empleo en PYMEs, % del total")$Descripción[1],
+            sep = "<br> <br>"))
+    } else {
+      HTML(paste(filter(Economia, Indicador == "Grandes empresas, % del total de empresas")$Descripción[1],
+            filter(Economia, Indicador == "Empresas medianas, % del total de empresas")$Descripción[1],
+            filter(Economia, Indicador == "Pequeñas empresas, % del total de empresas")$Descripción[1],
+            filter(Economia, Indicador == "Microempresas, % del total de empresas")$Descripción[1],
+            sep = "<br> <br>"))
+    }
+    
   })
   
   ## Analisis -------------------------
@@ -1492,6 +1821,8 @@ shinyApp(ui = ui, server = server)
 # Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
 
 # Series de tiempo para educacion hacer 
+
+# Grafico de cantidad de personas en grupos de edades para ver la edad de la poblacion a lo largo del tiempo
 
 # Arreglar-------------
 
