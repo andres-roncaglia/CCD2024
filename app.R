@@ -31,7 +31,7 @@ Trabajo <- read_xlsx("Datos/Trabajo.xlsx")
 
 # Carga de datos https://ourworldindata.org/ ---------------
 
-transporte_publico <- read.csv("Datos/sub - acceso transporte publico.csv") |> 
+transporte_publico <- read.csv("Datos/Acceso transporte publico.csv") |> 
   rename(Valor = Proportion.of.population.that.has.convenient.access.to.public.transport,
          Año = Year,
          Codigo = Code,
@@ -39,7 +39,7 @@ transporte_publico <- read.csv("Datos/sub - acceso transporte publico.csv") |>
   mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público",
          Descripción = "Porcentaje de la poblacion con acceso conveniente al transporte público")
 
-emisiones <- read.csv("Datos/sub - emisiones de co2.csv")|> 
+emisiones <- read.csv("Datos/Emisiones de co2.csv")|> 
   rename(Valor = Per.capita.carbon.dioxide.emissions.from.transport,
          Año = Year,
          Codigo = Code,
@@ -47,16 +47,20 @@ emisiones <- read.csv("Datos/sub - emisiones de co2.csv")|>
   mutate(Indicador = "Emisiones CO2 por el transporte (per capita)",
          Descripción = "Emisiones de Dioxido de carbono per capita emitidas por el transporte")
 
-gasto_investigacion <- read.csv("Datos/sub - gasto en investigacion.csv") |> 
-  rename(Valor = Research.and.development.expenditure....of.GDP.,
-         Año = Year,
-         Codigo = Code,
-         Pais = Entity) |> 
-  mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo",
-         Descripción = "Porcentaje del GDP invertido en investigación y desarrollo")
 
 
-# Carga de datos https://github.com/argendatafundar/data?tab=readme-ov-file ------------------
+# Carga de datos https://statistics.cepal.org/portal/databank ------------------
+
+poblacion_edad <- read_xlsx("Datos/Poblacion edad.xlsx") |> 
+  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
+  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
+                          str_detect(Pais, "Bolivia") ~ "Bolivia",
+                          T ~ Pais))
+esperanza_vida <- read_xlsx("Datos/Esperanza de vida.xlsx") |> 
+  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value)
+natalidad <- read_xlsx("Datos/Natalidad.xlsx") |> 
+  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value)
+
 
 
 # Carga de traducciones ----------
@@ -78,6 +82,7 @@ prep <- function(x) {
       Pais = case_when(
         Pais == "Bolivia (Plurinational State of)" ~ "Bolivia",
         Pais == "Venezuela (Bolivarian Republic of)" ~ "Venezuela", 
+        Pais == "Brazil" ~ "Brasil", 
         T ~ Pais),
       Año = as.numeric(Año)) |> 
     left_join(Traducciones, by = "Indicador") |> 
@@ -103,8 +108,7 @@ Ciencia <- prep(Ciencia)
 Ciencia <- Ciencia |> 
   bind_rows(
     filter(transporte_publico, Codigo %in% unique(Ciencia$Codigo)),
-    filter(emisiones, Codigo %in% unique(Ciencia$Codigo)),
-    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo)))
+    filter(emisiones, Codigo %in% unique(Ciencia$Codigo)))
 
 Vida <- prep(Vida) |> arrange(Pais)
 Economia <- prep(Economia) |> arrange(Pais)
@@ -114,7 +118,8 @@ Pobreza <- prep(Pobreza) |> arrange(Pais)
 Trabajo <- prep(Trabajo) |> arrange(Pais)
 
 vida_poblacion <- rbind(Vida,Poblacion)
-ciencia_educacion <- rbind(Ciencia,Educacion)
+ciencia_educacion <- rbind(Ciencia,Educacion) |> 
+  distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE)
 
 
 # Tema de los graficos -------------
@@ -251,8 +256,10 @@ library(sf)
 data(world)
 
 datos_mapa <- filter(world, continent == "South America") |> 
+  mutate(name_long = case_when(name_long == "Brazil" ~ "Brasil",
+                               T ~ name_long)) |> 
   arrange(name_long) |> 
-  filter(iso_a2 != "FK")
+  filter(iso_a2 != "FK") 
 
 mapa <- datos_mapa |> 
   leaflet() |> 
@@ -593,6 +600,35 @@ graf_lollipop <- function(dataset, indicador, orden, anio) {
   ggplotly(graf_lollipop, tooltip = c("y", "Valor", "Indicador"))
 }
 
+## Piramide poblacional -----------------
+
+graf_piramide <- function(pais, anio) {
+  
+  level <- unique(poblacion_edad$`Grupos quinquenales de edad`)
+  
+  data <- poblacion_edad |> 
+    mutate(Edad = factor(`Grupos quinquenales de edad`, levels = level),
+           Valor = ifelse(Sexo == "Hombres", -Valor, Valor)) |> 
+    filter(Pais == pais, Año == anio, Sexo != "Ambos sexos")
+  
+  graf <- ggplot(data, aes(x = Edad, y = Valor, fill = Sexo)) +
+    geom_bar(stat = "identity", position = "identity", width = 1) +
+    scale_y_continuous(labels = abs) +  # Mostrar números positivos en el eje y
+    labs(x = "Edad", y = "Población (miles)") +
+    scale_fill_manual(values = c("Mujeres" = "#F1C8DB", "Hombres" = "#41CADB")) +
+    coord_flip()
+  
+  ggplotly(graf) |> 
+    layout(hovermode = "y unified",
+           legend = list(
+             orientation = "h",  
+             x = 0.5,  
+             y = 1.1,  
+             xanchor = "center",  
+             yanchor = "bottom"  
+           ))
+  
+}
 
 # Items del carrusel ------------
 
@@ -680,8 +716,8 @@ ui <- dashboardPage(
       tabItem(
         tabName = "pag_principal",
         
-        h2("Que los datos te cuenten la historia", style = "text-align: center;"),
-        h5("Explora de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
+        h1("Que los datos te cuenten la historia", style = "text-align: center;"),
+        h3("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
         
         # Video Youtube
         div(
@@ -737,7 +773,7 @@ ui <- dashboardPage(
           box(width = 12,
               fluidRow(column(7, 
                               pickerInput(inputId = "indicador_ciencia",
-                                          label = "Variable",
+                                          label = "Indicador",
                                           choices = unique(Ciencia$Indicador),
                                           selected = unique(Ciencia$Indicador)[1])),
                        column(5,
@@ -779,7 +815,7 @@ ui <- dashboardPage(
         box(width = 12,
             column(4, 
                    pickerInput(inputId = "indicador_educacion",
-                               label = "Variable",
+                               label = "Indicador",
                                choices = c(
                                  "Años promedio de escolaridad",
                                  "Años esperados de escolarización",
@@ -842,7 +878,7 @@ ui <- dashboardPage(
           fluidRow(
           column(10,
                  pickerInput(inputId = "indicador_vida",
-                             label = "Variable",
+                             label = "Indicador",
                              choices = c("Población",                                                                                                                              
                                         "Índice de pobreza multidimensional",
                                         "Población de refugiados por país o territorio de asilo"))
@@ -1026,15 +1062,18 @@ ui <- dashboardPage(
       
       tabItem(
         tabName = "analisis",
-        h2("Analisis de datos"), br(),
+        h2("Análisis de datos"), br(),
         h4("Análisis de correlaciones"), br(),
         
-        fluidRow(
+        p("Ver la correlación entre dos variables es útil para medir la relación o el grado de asociación entre ellas. La correlación puede proporcionar información clave sobre cómo un indicador se comporta en relación con otro, lo que puede ayudar a descubrir patrones, dependencias, o incluso factores causales. Que la correlación sea positiva significa que ambos indicadores aumentan o disminuyen juntos, que se negativa significaría que cuando uno aumenta el otro disminuye, mientras que una correlación nula indicaría que los indicadores no tienen relación entre sí."),
+        br(),
+        box(width = 12,
+          fluidRow(
           column(7,
                  plotlyOutput("plot_corr")),
-          column(5,
+          column(4,
                  fluidRow(
-                   pickerInput(inputId = "var_corr_1", label = "Variable eje x", choices = list(
+                   pickerInput(inputId = "var_corr_1", label = "Indicador eje x", choices = list(
                      Desarrollo = unique(ciencia_educacion$Indicador), 
                      "Vida Y Población" = unique(vida_poblacion$Indicador), 
                      Economia = unique(Economia$Indicador), 
@@ -1047,7 +1086,7 @@ ui <- dashboardPage(
                      size = 7))
                  ),
                  fluidRow(
-                   pickerInput(inputId = "var_corr_2", label = "Variable eje y", choices = list(
+                   pickerInput(inputId = "var_corr_2", label = "Indicador eje y", choices = list(
                      Desarrollo = unique(ciencia_educacion$Indicador), 
                      "Vida Y Población" = unique(vida_poblacion$Indicador), 
                      Economia = unique(Economia$Indicador), 
@@ -1069,29 +1108,42 @@ ui <- dashboardPage(
                    valueBoxOutput("caja_correlaciones", width = 11)
                  )
                  )
-        ),
+        )),
         br(),
-        fluidRow(
+        h4("Análisis de componentes principales"), br(),
+        p("El análisis de componentes principales es una técnica estadística que se utiliza para reducir la dimensionalidad de un conjunto de datos, reteniendo la mayor cantidad de información posible. En otras palabras, se usa para reducir el número de variables (en este caso indicadores) sin perder demasiada información importante. Se transforman las variables originales en un nuevo conjunto de variables no correlacionadas llamadas componentes principales, donde cada componente principal es una combinación lineal de las variables originales."),
+        br(),
+        box(width = 12,
+            fluidRow(
           column(7,
                  plotlyOutput("graf_aporte_cp")),
           
           column(5,
                  DTOutput("tabla_cp")
                  )
-        ),
+        )),
         br(),
-        fluidRow(
+        p("En el gráfico de la izquierda se pueden observar en cúantas variables se pueden resumir todos los indicadores sin perder demasiada información. La tabla de la derecha muestra el aporte de cada indicador a las nuevas variables, cuanto mayor sea el valor, mayor es la influencia del indicador en la variable."),
+        br(),
+        p("A partir de las componentes principales obtenidas se podrían agrupar a los países según estas nuevas variables."),
+        br(),
+        h4("Agrupamiento por cluster"),
+        br(),
+        p("El análisis de clústeres permite encontrar patrones en los datos al agrupar países que sean similares entre sí según ciertas características. El análisis de clústeres identifica grupos 'naturales' que no son evidentes a simple vista."),
+        br(),
+        box(width = 12,
+            fluidRow(
           column(9,
                  plotlyOutput("graf_acp")),
           
-          column(3, 
+          column(2, 
                  fluidRow(
                    pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[3])
                    ),
                  fluidRow(
                    pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[4])
                  ))
-        )
+        ))
       ),
       
       # Pagina Bases de datos ---------------------
@@ -1123,7 +1175,10 @@ ui <- dashboardPage(
                      DTOutput("tabla_datos")
                      )
               )
-            )
+            ),
+        br(),
+        h2("Fuentes")
+        
         
         
       )
@@ -1251,34 +1306,61 @@ server <- function(input, output, session) {
   
   observeEvent(
     input$pais_educacion, {
-      carrusel_item <- function(indicador, num) {
-      carouselItem(
+      
+      indicador <- c("Coeficiente de desigualdad humana", "Proporción de la fuerza laboral con educación avanzada", "Índice de Inclusión Social y Equidad", "Gasto en educación terciaria (% del gasto gubernamental en educación)", "Índice de Desarrollo de Género", "Desigualdad en educación", "Índice de Desarrollo Humano Ajustado por Desigualdad", "Índice de Desarrollo Humano Ajustado por Desigualdad, diferencia con el valor del IDH no ajustado", "Índice de Desarrollo Humano ajustado por presiones planetarias", "Índice de Desarrollo Humano ajustado por presiones planetarias, diferencia con el IDH no ajustado", "Inscripción escolar, terciaria (% bruto)")
+      
+      for (num in 1:11) {
         
-        h4(indicador), br(),
-        
-        column(width = 8, offset = 2,
-               sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
-                               label = "Año",
-                               grid = T,
-                               choices = sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año)),
-                               selected = max(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año),
-                               animate = T)),
-        br(),
-        
-        flipBox(
-          id = paste0("carrusel",num),
-          width = 12,
-          front = div(
-            class = "d-flex justify-content-center",
-            height = "300px",
-            width = "100%",
-            plotlyOutput(paste0("dona_carrusel_",num))),
-          back = box(width = NULL,title = indicador, height = 500, 
-                     style = "height: 500px; width: 100%; padding: 0; margin: 0;",
-                     p(filter(Educacion, Indicador == indicador)$Descripción[1]))
+        if (length(sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador[num])$Año))) < 1) {
+          updateSliderTextInput(
+            session = session,
+            inputId = paste0("carrusel_educacion_anio_", num),
+            label = "Año",
+            choices = c(2020,2021),
+            selected = 2020
           )
-      )
-    }
+          next
+          
+        } else {
+          updateSliderTextInput(
+            session = session,
+            inputId = paste0("carrusel_educacion_anio_", num),
+            label = "Año",
+            choices = sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador[num])$Año)),
+            selected = max(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador[num])$Año)
+          )
+        }
+      }
+      
+      
+    #   carrusel_item <- function(indicador, num) {
+    #   carouselItem(
+    #     
+    #     h4(indicador), br(),
+    #     
+    #     column(width = 8, offset = 2,
+    #            sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
+    #                            label = "Año",
+    #                            grid = T,
+    #                            choices = sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año)),
+    #                            selected = max(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año),
+    #                            animate = T)),
+    #     br(),
+    #     
+    #     flipBox(
+    #       id = paste0("carrusel",num),
+    #       width = 12,
+    #       front = div(
+    #         class = "d-flex justify-content-center",
+    #         height = "300px",
+    #         width = "100%",
+    #         plotlyOutput(paste0("dona_carrusel_",num))),
+    #       back = box(width = NULL,title = indicador, height = 500, 
+    #                  style = "height: 500px; width: 100%; padding: 0; margin: 0;",
+    #                  p(filter(Educacion, Indicador == indicador)$Descripción[1]))
+    #       )
+    #   )
+    # }
   })
   
   
@@ -1768,10 +1850,10 @@ server <- function(input, output, session) {
   output$tabla_cp <- renderDT({
     acp$var$contrib |>
       as.data.frame() |> 
-      mutate(Variable = rownames(acp$var$contrib)) |>
+      mutate(Indicador = rownames(acp$var$contrib)) |>
       `rownames<-`(NULL) |> 
       mutate_if(is.numeric, round, 4) |> 
-      relocate(Variable, .before = colnames(acp$var$contrib)[1]) |> 
+      relocate(Indicador, .before = colnames(acp$var$contrib)[1]) |> 
       datatable(selection = "none",escape = F, options = list(pageLength = 5,
                                                               scrollX = T,
                                                               scrollY = "300px",
@@ -1875,16 +1957,7 @@ shinyApp(ui = ui, server = server)
 
 # https://es.statista.com/temas/9257/el-uso-de-internet-en-america-latina/#topFacts
 
-# Unir bases de datos: Poblacion-Vida, Ciencia-Educacion, Trabajo, pobreza (Salud no)
-
-# Dim1: Desarrollo, Educacion, Desigualdad
-
-# Dim 2: Economía, educación, Acceso al agua potable
-
-#  Dim 3: Poblacion, 
-
-#  Dim 4: Inflación, Igualdad de genero+
-
+# Unir bases de datos: Poblacion-Vida-pobreza, Ciencia-Educacion, Trabajo-Economia
 
 # Agregar tasas de crecimiento decrecimiento 
 
@@ -1896,16 +1969,12 @@ shinyApp(ui = ui, server = server)
 
 # Grafico de cantidad de personas en grupos de edades para ver la edad de la poblacion a lo largo del tiempo
 
+# Series de tiempo transformables a bump plots
+
 # Arreglar-------------
 
 # Data en hover me tira la info de la recta tmb, evitando que pueda comparar mas paises
 
-# en el carrusel los sliders de año tienen años en los que muchos paises no tienen datos
-
 # Modificar el boton de play de los slider input con años
-
-# Arreglar grafico de correlaciones
-
-# Cambiar donde diga Variable a Indicador
 
 # Filtrar en cada base de datos los indicadores únicos y que correspondan a cada base
