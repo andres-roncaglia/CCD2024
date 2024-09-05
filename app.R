@@ -12,6 +12,7 @@ library(DT)
 library(stringr)
 library(zoo)
 library(shinydashboardPlus)
+library(htmlwidgets)
 
 # Para el carrusel si mantengo el mouse
 jscode <-"
@@ -55,11 +56,28 @@ poblacion_edad <- read_xlsx("Datos/Poblacion edad.xlsx") |>
   rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
   mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                           str_detect(Pais, "Bolivia") ~ "Bolivia",
-                          T ~ Pais))
+                          T ~ Pais),
+         Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.",
+         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
+         Año = as.numeric(Año))
 esperanza_vida <- read_xlsx("Datos/Esperanza de vida.xlsx") |> 
-  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value)
+  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
+  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
+                          str_detect(Pais, "Bolivia") ~ "Bolivia",
+                          T ~ Pais),
+         Descripción = "Representa la duración media de la vida de los individuos, que integran una cohorte hipotética de nacimientos, sometidos en todas las edades a los riesgos de mortalidad del período en estudio",
+         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
+         Indicator = Indicador,
+         Año = as.numeric(Año))
 natalidad <- read_xlsx("Datos/Natalidad.xlsx") |> 
-  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value)
+  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
+  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
+                          str_detect(Pais, "Bolivia") ~ "Bolivia",
+                          T ~ Pais),
+         Descripción = "Mide la frecuencia de los nacimientos ocurridos en un período en relación a la población total. Es el cociente entre el número de nacimientos ocurridos durante un período dado y la población media de ese período",
+         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
+         Indicator = Indicador,
+         Año = as.numeric(Año))
 
 
 
@@ -110,15 +128,22 @@ Ciencia <- Ciencia |>
     filter(transporte_publico, Codigo %in% unique(Ciencia$Codigo)),
     filter(emisiones, Codigo %in% unique(Ciencia$Codigo)))
 
-Vida <- prep(Vida) |> arrange(Pais)
-Economia <- prep(Economia) |> arrange(Pais)
-Educacion <- prep(Educacion) |> arrange(Pais)
-Poblacion <- prep(Poblacion) |> arrange(Pais)
-Pobreza <- prep(Pobreza) |> arrange(Pais)
-Trabajo <- prep(Trabajo) |> arrange(Pais)
+Vida <- prep(Vida)
+Economia <- prep(Economia)
+Educacion <- prep(Educacion)
+Poblacion <- prep(Poblacion)
+Pobreza <- prep(Pobreza)
+Trabajo <- prep(Trabajo)
 
-vida_poblacion <- rbind(Vida,Poblacion)
+vida_poblacion <- rbind(Vida, Poblacion, Pobreza,
+                        select(filter(esperanza_vida, Sexo == "Ambos sexos"), -c(unit, notes_ids, source_id, Sexo)),
+                        select(natalidad, -c(unit, notes_ids, source_id))) |> 
+  distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE)
+
 ciencia_educacion <- rbind(Ciencia,Educacion) |> 
+  distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE)
+
+economia_trabajo <- rbind(Economia, Trabajo)|>
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE)
 
 
@@ -185,10 +210,10 @@ estilotablas <- function() {
 library(FactoMineR)
 
 ## Preparacion de los datos para ACP -------------------
-datos_acp <- bind_rows(Ciencia, Vida, Economia, Educacion, Poblacion, Pobreza, Trabajo) |> 
+datos_acp <- bind_rows(ciencia_educacion, Economia, vida_poblacion) |> 
   filter(Año == 2022) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE) |> # Elimina las filas duplicadas
-  select(!c(Año, Descripción, Indicator)) |> 
+  select(!c(Año, Descripción, Indicator, Codigo)) |> 
   pivot_wider(names_from = Indicador,
               values_from = Valor,
               values_fill = list(Valor = NA)) |> 
@@ -227,7 +252,7 @@ num_cp <- length(which(acp$eig[,"cumulative percentage of variance"] < 85))
 variables_componentes <- acp$ind$coord[,1:num_cp]
 
 datos_cluster <- datos_acp |> 
-  select(Pais, Codigo) |> 
+  select(Pais) |> 
   bind_cols(variables_componentes) |> 
   mutate_if(is.numeric, scale)
 
@@ -564,7 +589,27 @@ graf_bump <- function(dataset, indicador) {
                         range = list(min(data_bump$Año)-4, max(data_bump$Año)+4)),
            yaxis = list(fixedrange = T),
            font = list (color = "#bcc3c7"),
-           annotations = anotaciones_plotly)
+           annotations = anotaciones_plotly) |> 
+    style(opacity = 1) |>  # Establecer opacidad baja por defecto
+    onRender("
+    function(el, x) {
+      el.on('plotly_hover', function(d) {
+        var country = d.points[0].data.name;
+        var traces = el.data;
+        traces.forEach(function(trace, i) {
+          if (trace.name === country) {
+            Plotly.restyle(el, {'opacity': 1}, [i]);  // Resaltar la línea del país seleccionado
+          } else {
+            Plotly.restyle(el, {'opacity': 0.4}, [i]); // Hacer el resto de las líneas más transparentes
+          }
+        });
+      });
+
+      el.on('plotly_unhover', function(d) {
+        Plotly.restyle(el, {'opacity': 1});  // Restaurar la opacidad de todas las líneas cuando no se está en hover
+      });
+    }
+  ")
 }
 
 
@@ -696,11 +741,9 @@ ui <- dashboardPage(
                    sidebarMenu(
                      id = "sidebar",
                      menuItem("Página principal", tabName = "pag_principal", icon = icon("home")),
-                     menuItem("Desarrollo", tabName = "ciencia", icon = icon("microscope")),
+                     menuItem("Desarrollo y Educación", tabName = "ciencia", icon = icon("microscope")),
                      menuItem("Vida y Población", tabName = "vida", icon = icon("hand-holding-heart")),
-                     menuItem("Economia", tabName = "economia", icon = icon("money-bill-wave")),
-                     menuItem("Pobreza", tabName = "pobreza", icon = icon("person-shelter")),
-                     menuItem("Trabajo", tabName = "trabajo", icon = icon("briefcase")),
+                     menuItem("Economia y Trabajo", tabName = "economia", icon = icon("money-bill-wave")),
                      menuItem("Análisis de datos", tabName = "analisis", icon = icon("magnifying-glass-chart")),
                      menuItem("Bases de datos", tabName = "datos", icon = icon("database"))
                      )
@@ -727,32 +770,26 @@ ui <- dashboardPage(
         br(),
         ## Primera hilera de botones ---------------------
         fluidRow(
-          column(3,
-                 actionBttn("ciencia", "Desarrollo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", class = "my-custom-btn"),
+          column(4,
+                 actionBttn("ciencia", "Desarrollo y Educación", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", class = "my-custom-btn"),
           ),
-          column(3,
+          column(4,
                  actionBttn("vida", "Vida y Población", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
-          column(3,
-                 actionBttn("economia", "Economia", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
-          ),
-          column(3,
-                 actionBttn("educacion", "Pobreza", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
+          column(4,
+                 actionBttn("economia", "Economía y Trabajo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           )
         ), br(),
         
         ## Segunda hilera de botones ---------------------
         fluidRow(
-          column(3,
-                 actionBttn("trabajo", "Trabajo", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
-          ),
-          column(3,
+          column(4,
                  actionBttn("analisis", "Análisis de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
-          column(3,
-                 actionBttn("datos", "Datos y Glosario", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
+          column(4,
+                 actionBttn("datos", "Bases de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
-          column(3,
+          column(4,
                  actionBttn("github", "Github", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", icon = icon("github"))
           )
         ), br(),
@@ -799,11 +836,6 @@ ui <- dashboardPage(
                   title = "Descripción del indicador",
                   collapsed = F,
                   textOutput("descripcion_indicador_ciencia")
-                ),
-                accordionItem(
-                  title = "¡Que los datos te cuenten la historia!",
-                  collapsed = F,
-                  uiOutput("historia_ciencia")
                 )
               )
               
@@ -836,11 +868,6 @@ ui <- dashboardPage(
                      title = "Descripción del indicador",
                      collapsed = F,
                      textOutput("descripcion_indicador_educacion")
-                   ),
-                   accordionItem(
-                     title = "¡Que los datos te cuenten la historia!",
-                     collapsed = F,
-                     textOutput("historia_educacion")
                    )
                  )
                  ),
@@ -872,14 +899,16 @@ ui <- dashboardPage(
       
       tabItem(
         tabName = "vida",
-        h2("Población y vida"),
+        h2("Población"),
         
         box(width = 12,
           fluidRow(
-          column(10,
+          column(8, offset = 2,
                  pickerInput(inputId = "indicador_vida",
                              label = "Indicador",
-                             choices = c("Población",                                                                                                                              
+                             choices = c("Población, total",
+                                         "Esperanza de vida al nacer, según sexo",
+                                         "Tasa bruta de natalidad",
                                         "Índice de pobreza multidimensional",
                                         "Población de refugiados por país o territorio de asilo"))
                  )
@@ -894,16 +923,64 @@ ui <- dashboardPage(
             title = "Descripción del indicador",
             collapsed = F,
             textOutput("descripcion_indicador_vida")
-          ),
-          accordionItem(
-            title = "¡Que los datos te cuenten la historia!",
-            collapsed = F,
-            textOutput("historia_vida")
-            )
+          )
           )
         ),
         br(),
+        box(width = 12,
+            fluidRow(
+              column(4, 
+                     sliderTextInput(inputId = "piramide_anio",
+                                     label = "Año",
+                                     grid = T,
+                                     choices = sort(unique(filter(poblacion_edad, Pais =="Argentina")$Año)),
+                                     selected = max(unique(filter(poblacion_edad, Pais =="Argentina")$Año))
+                     )),
+              column(width = 2, offset = 1,
+                     pickerInput(inputId = "piramide_pais",
+                                 label = "País",
+                                 unique(poblacion_edad$Pais))
+              )
+              ),
+            fluidRow(
+              column(6,
+                     plotlyOutput("piramide_vida")
+              ),
+              
+              column(6,
+                     plotlyOutput("area_poblacion"))
+            ),
+            
+            fluidRow(
+              column(6,
+                     accordion(
+                       id = "acordion_piramide",
+                       accordionItem(
+                         title = "Descripción del indicador",
+                         collapsed = F,
+                         p("Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.")
+                         )
+                       )
+                     
+                     ),
+              column(6,
+                     accordion(
+                       id = "acordion_area_pob",
+                       accordionItem(
+                         title = "Descripción del indicador",
+                         collapsed = F,
+                         p(paste(filter(vida_poblacion, Indicador == "Población Urbana, total")$Descripción[1],
+                                 "
+                                     ",
+                                 filter(vida_poblacion, Indicador == "Población rural, total")$Descripción[1])))
+                     ))
+            )
+            
+            ),
         
+        br(),
+        h2("Calidad de vida"),
+        br(),
         box(width = 12,
             
             fluidRow(column(4,
@@ -916,8 +993,8 @@ ui <- dashboardPage(
               column(4,
                      pickerInput(inputId = "indicador_vida_total",
                                  label = "Población total",
-                                 choices = c("Población rural/urbana" ,unique(filter(vida_poblacion, 
-                                                                                     str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
+                                 choices = c(unique(filter(vida_poblacion, Indicador != "Población de 65 años y más, % de la población total",
+                                                           str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
                                  )$Indicador),
                                  "Población inmigrante")), br(),
                      sliderTextInput(inputId = "dona_vida_anio_1",
@@ -986,7 +1063,14 @@ ui <- dashboardPage(
                      )
               )
             
-            )
+            ),
+        
+        br(),
+        
+        h2("Pobreza"),
+        
+        br(),
+        box(width = 12)
         
       ),
       
@@ -1074,13 +1158,10 @@ ui <- dashboardPage(
           column(4,
                  fluidRow(
                    pickerInput(inputId = "var_corr_1", label = "Indicador eje x", choices = list(
-                     Desarrollo = unique(ciencia_educacion$Indicador), 
-                     "Vida Y Población" = unique(vida_poblacion$Indicador), 
-                     Economia = unique(Economia$Indicador), 
-                     Poblacion = unique(Poblacion$Indicador), 
-                     Pobreza = unique(Pobreza$Indicador), 
-                     Trabajo = unique(Trabajo$Indicador)
-                   ), selected = "Empleo fuera del sector formal por sexo (miles), Total",
+                     "Desarrollo y educación" = setNames(sort(unique(ciencia_educacion$Indicador)), ifelse(str_count(sort(unique(ciencia_educacion$Indicador))) > 80, paste0(str_sub(sort(unique(ciencia_educacion$Indicador)), start = 1, end = 80), "..."), sort(unique(ciencia_educacion$Indicador)))), 
+                     "Vida y población" = setNames(sort(unique(vida_poblacion$Indicador)), ifelse(str_count(sort(unique(vida_poblacion$Indicador))) > 80, paste0(str_sub(sort(unique(vida_poblacion$Indicador)), start = 1, end = 80), "..."), sort(unique(vida_poblacion$Indicador)))), 
+                     "Economia y trabajo" = setNames(sort(unique(economia_trabajo$Indicador)), ifelse(str_count(sort(unique(economia_trabajo$Indicador))) > 80, paste0(str_sub(sort(unique(economia_trabajo$Indicador)), start = 1, end = 80), "..."), sort(unique(economia_trabajo$Indicador))))
+                     ), selected = "Empleo fuera del sector formal por sexo (miles), Total",
                    options = list(
                      `live-search` = TRUE,
                      size = 7))
@@ -1110,7 +1191,7 @@ ui <- dashboardPage(
                  )
         )),
         br(),
-        h4("Análisis de componentes principales"), br(),
+        h4("Análisis de componentes principales (Datos del 2022)"), br(),
         p("El análisis de componentes principales es una técnica estadística que se utiliza para reducir la dimensionalidad de un conjunto de datos, reteniendo la mayor cantidad de información posible. En otras palabras, se usa para reducir el número de variables (en este caso indicadores) sin perder demasiada información importante. Se transforman las variables originales en un nuevo conjunto de variables no correlacionadas llamadas componentes principales, donde cada componente principal es una combinación lineal de las variables originales."),
         br(),
         box(width = 12,
@@ -1138,10 +1219,10 @@ ui <- dashboardPage(
           
           column(2, 
                  fluidRow(
-                   pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[3])
+                   pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[2])
                    ),
                  fluidRow(
-                   pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[3:7], selected = colnames(datos_cluster)[4])
+                   pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[3])
                  ))
         ))
       ),
@@ -1161,7 +1242,7 @@ ui <- dashboardPage(
                      pickerInput(
                        inputId = "base_datos",
                        label = "Seleccionar Base de datos", 
-                       choices = c("Desarrollo", "Vida y población")
+                       choices = c("Desarrollo y educación", "Vida y población", "Economía y trabajo")
                        )
                      ),
               column(2,
@@ -1237,23 +1318,23 @@ server <- function(input, output, session) {
     graf = graf_evolutivo(Ciencia, input$indicador_ciencia)
     
     #### Internet Que los datos te cuenten la historia ----------------------
-    if (str_detect(input$indicador_ciencia, "internet") | str_detect(input$indicador_ciencia, "Internet")) {
-      Periodos <- data.frame(
-        Comienzo = c(1990:1994, 1998:1999),
-        Periodo = c(rep("El comienzo en el internet", 5), rep("Evolucion", 2)))
-      
-      maximo <- max(filter(Ciencia, Indicador == input$indicador_ciencia)$Valor)
-      
-      graf <- graf +
-        geom_bar(data = Periodos, inherit.aes = F,
-                 aes(x= Comienzo, y = maximo, customdata = Periodo),
-                 stat = "identity", position = "stack", width = 1,
-                 fill = "cyan3", alpha = 0.3,
-                 just = 0) +
-        scale_x_continuous(limits = c(min(filter(Ciencia, Indicador == input$indicador_ciencia)$Año),
-                                      max(filter(Ciencia, Indicador == input$indicador_ciencia)$Año)))
-    }
-    
+    # if (str_detect(input$indicador_ciencia, "internet") | str_detect(input$indicador_ciencia, "Internet")) {
+    #   Periodos <- data.frame(
+    #     Comienzo = c(1990:1994, 1998:1999),
+    #     Periodo = c(rep("El comienzo en el internet", 5), rep("Evolucion", 2)))
+    #   
+    #   maximo <- max(filter(Ciencia, Indicador == input$indicador_ciencia)$Valor)
+    #   
+    #   graf <- graf +
+    #     geom_bar(data = Periodos, inherit.aes = F,
+    #              aes(x= Comienzo, y = maximo, customdata = Periodo),
+    #              stat = "identity", position = "stack", width = 1,
+    #              fill = "cyan3", alpha = 0.3,
+    #              just = 0) +
+    #     scale_x_continuous(limits = c(min(filter(Ciencia, Indicador == input$indicador_ciencia)$Año),
+    #                                   max(filter(Ciencia, Indicador == input$indicador_ciencia)$Año)))
+    # }
+    # 
     ggplotly(graf, tooltip = c("Año", "Valor", "color", "customdata"), source = "plot_evo_ciencia_click") |> 
       event_register("plotly_click")
     
@@ -1287,20 +1368,20 @@ server <- function(input, output, session) {
   
   ### Historia acordion -----------------
   
-  output$historia_ciencia <- renderUI({
-    
-    click_data <- event_data("plotly_click", source = "plot_evo_ciencia_click")
-    
-    if (is.null(click_data)) {
-      HTML("Clickea alguna zona marcada para conocer la historia.")
-    } else if (click_data$customdata %in% datos_historicos$nom_periodo) {
-      HTML(filter(datos_historicos, nom_periodo == click_data$customdata)$des_periodo) 
-    } else {
-      HTML("Clickea alguna zona marcada para conocer la historia.")
-    }
-    
-
-  })
+  # output$historia_ciencia <- renderUI({
+  #   
+  #   click_data <- event_data("plotly_click", source = "plot_evo_ciencia_click")
+  #   
+  #   if (is.null(click_data)) {
+  #     HTML("Clickea alguna zona marcada para conocer la historia.")
+  #   } else if (click_data$customdata %in% datos_historicos$nom_periodo) {
+  #     HTML(filter(datos_historicos, nom_periodo == click_data$customdata)$des_periodo) 
+  #   } else {
+  #     HTML("Clickea alguna zona marcada para conocer la historia.")
+  #   }
+  #   
+  # 
+  # })
   
   ###Funcion carrusel items -------------
   
@@ -1333,34 +1414,6 @@ server <- function(input, output, session) {
       }
       
       
-    #   carrusel_item <- function(indicador, num) {
-    #   carouselItem(
-    #     
-    #     h4(indicador), br(),
-    #     
-    #     column(width = 8, offset = 2,
-    #            sliderTextInput(inputId = paste0("carrusel_educacion_anio_", num),
-    #                            label = "Año",
-    #                            grid = T,
-    #                            choices = sort(unique(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año)),
-    #                            selected = max(filter(Educacion, Pais == input$pais_educacion, Indicador == indicador)$Año),
-    #                            animate = T)),
-    #     br(),
-    #     
-    #     flipBox(
-    #       id = paste0("carrusel",num),
-    #       width = 12,
-    #       front = div(
-    #         class = "d-flex justify-content-center",
-    #         height = "300px",
-    #         width = "100%",
-    #         plotlyOutput(paste0("dona_carrusel_",num))),
-    #       back = box(width = NULL,title = indicador, height = 500, 
-    #                  style = "height: 500px; width: 100%; padding: 0; margin: 0;",
-    #                  p(filter(Educacion, Indicador == indicador)$Descripción[1]))
-    #       )
-    #   )
-    # }
   })
   
   
@@ -1406,13 +1459,13 @@ server <- function(input, output, session) {
   
   ### Historia acordion Educacion -----------------
   
-  output$historia_educacion <- renderText({
-    
-    if (T) {
-      "Clickea alguna zona marcada para conocer la historia."
-    }
-    
-  })
+  # output$historia_educacion <- renderText({
+  #   
+  #   if (T) {
+  #     "Clickea alguna zona marcada para conocer la historia."
+  #   }
+  #   
+  # })
   
   ### Carrusel Educacion ----------------
   
@@ -1480,7 +1533,7 @@ server <- function(input, output, session) {
   
   output$plot_evo_vida <- renderPlotly({
     
-    if (input$indicador_vida == "Población") {
+    if (input$indicador_vida == "Población, total") {
       base_datos = vida_poblacion %>%
         mutate(Valor = round(Valor/1000000, 2)) |>
         filter(!is.na(Valor))
@@ -1499,6 +1552,82 @@ server <- function(input, output, session) {
     
   })
   
+  ### Descripcion acordion -----------------
+  
+  output$descripcion_indicador_vida <- renderText({
+    filter(vida_poblacion, Indicador == input$indicador_vida)$Descripción[1]
+  })
+  
+  ### Piramide poblacional ---------------------
+  
+  observeEvent(input$ppiramide_anio, {
+    updateSliderTextInput(session = session,
+                          inputId = "piramide_anio",
+                          label = "Año",
+                          choices = sort(unique(filter(poblacion_edad, Pais ==input$piramide_pais)$Año)),
+                          selected = max(unique(filter(poblacion_edad, Pais ==input$piramide_pais)$Año)))
+  })
+  
+  output$piramide_vida <- renderPlotly({
+    
+    graf_piramide(pais = input$piramide_pais, anio = input$piramide_anio)
+    
+  })
+  
+  ### Areas poblacionales ------------------
+  
+  output$area_poblacion <- renderPlotly({
+    datos_graf_areas_pais <- filter(Poblacion, Indicador == "Población rural, total" | Indicador == "Población Urbana, total", Pais == input$piramide_pais)
+    
+    rural_total <- filter(datos_graf_areas_pais, Indicador == "Población rural, total")$Valor
+    urbana_total <- filter(datos_graf_areas_pais, Indicador == "Población Urbana, total")$Valor
+    
+    hover_rural <- paste("Población rural, total:", rural_total, "<br>% del total:", round(rural_total / (rural_total + urbana_total) * 100, 1), "%")
+    hover_urbana <- paste("Población Urbana, total:", urbana_total, "<br>% del total:", round(urbana_total / (rural_total + urbana_total) * 100, 1), "%")
+    
+    
+    plot_ly(x = unique(datos_graf_areas_pais$Año), y = filter(datos_graf_areas_pais, Indicador == "Población rural, total")$Valor, name = "Población rural, total", type = 'scatter', mode = 'none', stackgroup = 'one', groupnorm = 'percent', fillcolor = '#ACFF47', text = hover_rural, hoverinfo = "text") |> 
+      add_trace(y = filter(datos_graf_areas_pais, Indicador == "Población Urbana, total")$Valor, name = "Población Urbana, total", fillcolor = '#41cadb', opacity = 0.3, text = hover_urbana, hoverinfo = "text") |> 
+      layout(
+        title = "Relación población rural/urbana",
+        font = list(color = "#bcc3c7", family = "Arial"),
+        margin = list(l = 20, r = 20, t = 50),
+        paper_bgcolor = "#272c30",
+        plot_bgcolor ="#272c30",
+        showlegend = F,
+        xaxis = list(title= "Año",
+                     showgrid = FALSE,
+                     fixedrange = T),
+        yaxis = list(
+          ticks = "",            # Remove ticks
+          showticklabels = FALSE, # Already removed the tick labels
+          automargin = T,
+          ticksuffix = '%'    # Adjust margins automatically
+        ),
+        shapes = list(
+          list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 20, y1 = 20, 
+               line = list(dash = "dot", color = "#272c30")),
+          list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 40, y1 = 40, 
+               line = list(dash = "dot", color = "#272c30")),
+          list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 60, y1 = 60, 
+               line = list(dash = "dot", color = "#272c30")),
+          list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 80, y1 = 80, 
+               line = list(dash = "dot", color = "#272c30")),
+          list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 50, y1 = 50, 
+               line = list(color = "#272c30"))
+        ),
+        annotations = list(
+          list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 20+2, text = "20%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+          list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 40+2, text = "40%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+          list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 60+2, text = "60%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+          list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 80+2, text = "80%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30"))
+        ),
+        hoverlabel = list(font = list(size = 15, color = "#bcc3c7"),
+                          namelength = -1),
+        hovermode = "x unified"
+      )
+    
+  })
   
   ### Graficos dona poblacion ------------------------
   
@@ -1897,22 +2026,15 @@ server <- function(input, output, session) {
   
   base_datos <- reactive({
     if (length(input$base_datos) == 0) {ciencia_educacion} else{
-      if (input$base_datos == "Ciencia") {
+      if (input$base_datos == "Desarrollo y educación") {
         ciencia_educacion
         
       } else if (input$base_datos == "Vida y población") {
         vida_poblacion
         
-      } else if  (input$base_datos == "economia") {
-        Economia
-      } else if (input$base_datos == "educacion") {
-        Educacion
-      } else if  (input$base_datos == "poblacion") {
-        Poblacion
-      } else if (input$base_datos == "pobreza") {
-        Pobreza
-      } else if (input$base_datos == "trabajo") {
-        Trabajo} else {ciencia_educacion}
+      } else if  (input$base_datos == "Economía y trabajo") {
+        economia_trabajo
+      } else {ciencia_educacion}
     } 
     
   })
@@ -1932,9 +2054,17 @@ server <- function(input, output, session) {
   
   output$tabla_datos = renderDT({
     
-    if (input$base_datos == "Desarrollo") {datos = ciencia_educacion
-    } else if (input$base_datos == "Vida y población") {datos = vida_poblacion}
-    
+    if (length(input$base_datos) == 0) {datos <- ciencia_educacion} else{
+      if (input$base_datos == "Desarrollo y educación") {
+        datos <- ciencia_educacion
+        
+      } else if (input$base_datos == "Vida y población") {
+        datos <- vida_poblacion
+        
+      } else if  (input$base_datos == "Economía y trabajo") {
+        datos <- economia_trabajo
+      } else {datos <- ciencia_educacion}
+    }
     datos %>% 
       datatable(selection = "single",escape = F, options = list(scrollX = T,
                                                               scrollY = "450px",
@@ -1953,23 +2083,15 @@ shinyApp(ui = ui, server = server)
 
 # Ideas ------------------
 
-# https://worldmigrationreport.iom.int/msite/wmr-2024-interactive/?lang=ES
-
-# https://es.statista.com/temas/9257/el-uso-de-internet-en-america-latina/#topFacts
-
 # Unir bases de datos: Poblacion-Vida-pobreza, Ciencia-Educacion, Trabajo-Economia
-
-# Agregar tasas de crecimiento decrecimiento 
-
-# Meter todos los plotlys en cajas? agregar anajo de cada caja la descripcion del indicador?
 
 # Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
 
 # Series de tiempo para educacion hacer 
 
-# Grafico de cantidad de personas en grupos de edades para ver la edad de la poblacion a lo largo del tiempo
-
 # Series de tiempo transformables a bump plots
+
+# Opcion de crear tu propio grafico
 
 # Arreglar-------------
 
@@ -1978,3 +2100,5 @@ shinyApp(ui = ui, server = server)
 # Modificar el boton de play de los slider input con años
 
 # Filtrar en cada base de datos los indicadores únicos y que correspondan a cada base
+
+# Cortar barra de busqueda indicadores en graf correlacion
