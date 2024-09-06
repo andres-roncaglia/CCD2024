@@ -1,9 +1,16 @@
+# Usar bslib
+# echarts4r <- alternativa plotly
+# reactable <- alternativa DT
+# Cargar las librerias necesarias de tidy
+
 
 # Carga de librerias ---------------
 library(shiny)
 library(shinydashboard)
 library(shinyWidgets)
-library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(rlang)
 library(ggplot2)
 library(plotly)
 library(readxl)
@@ -21,18 +28,18 @@ $(document).ready(function(){
 });"
 
 # Carga de datos https://data.undp.org/access-all-data-------------
-Ciencia <- read_xlsx("Datos/Ciencia y cambios tecnologicos.xlsx")
-Vida <- read_xlsx("Datos/Condiciones de vida.xlsx")
-Economia <- read_xlsx("Datos/Desarrollo economico.xlsx")
-Educacion <- read_xlsx("Datos/Educacion.xlsx")
-Poblacion <- read_xlsx("Datos/Poblacion y cambios demograficos.xlsx")
-Pobreza <- read_xlsx("Datos/Pobreza.xlsx")
-Trabajo <- read_xlsx("Datos/Trabajo.xlsx")
+Ciencia <- read_xlsx("www/Datos/Ciencia y cambios tecnologicos.xlsx")
+Vida <- read_xlsx("www/Datos/Condiciones de vida.xlsx")
+Economia <- read_xlsx("www/Datos/Desarrollo economico.xlsx")
+Educacion <- read_xlsx("www/Datos/Educacion.xlsx")
+Poblacion <- read_xlsx("www/Datos/Poblacion y cambios demograficos.xlsx")
+Pobreza <- read_xlsx("www/Datos/Pobreza.xlsx")
+Trabajo <- read_xlsx("www/Datos/Trabajo.xlsx")
 
 
 # Carga de datos https://ourworldindata.org/ ---------------
 
-transporte_publico <- read.csv("Datos/Acceso transporte publico.csv") |> 
+transporte_publico <- read.csv("www/Datos/Acceso transporte publico.csv") |> 
   rename(Valor = Proportion.of.population.that.has.convenient.access.to.public.transport,
          Año = Year,
          Codigo = Code,
@@ -40,7 +47,7 @@ transporte_publico <- read.csv("Datos/Acceso transporte publico.csv") |>
   mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público",
          Descripción = "Porcentaje de la poblacion con acceso conveniente al transporte público")
 
-emisiones <- read.csv("Datos/Emisiones de co2.csv")|> 
+emisiones <- read.csv("www/Datos/Emisiones de co2.csv")|> 
   rename(Valor = Per.capita.carbon.dioxide.emissions.from.transport,
          Año = Year,
          Codigo = Code,
@@ -52,7 +59,7 @@ emisiones <- read.csv("Datos/Emisiones de co2.csv")|>
 
 # Carga de datos https://statistics.cepal.org/portal/databank ------------------
 
-poblacion_edad <- read_xlsx("Datos/Poblacion edad.xlsx") |> 
+poblacion_edad <- read_xlsx("www/Datos/Poblacion edad.xlsx") |> 
   rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
   mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                           str_detect(Pais, "Bolivia") ~ "Bolivia",
@@ -60,7 +67,7 @@ poblacion_edad <- read_xlsx("Datos/Poblacion edad.xlsx") |>
          Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.",
          Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
          Año = as.numeric(Año))
-esperanza_vida <- read_xlsx("Datos/Esperanza de vida.xlsx") |> 
+esperanza_vida <- read_xlsx("www/Datos/Esperanza de vida.xlsx") |> 
   rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
   mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                           str_detect(Pais, "Bolivia") ~ "Bolivia",
@@ -69,7 +76,7 @@ esperanza_vida <- read_xlsx("Datos/Esperanza de vida.xlsx") |>
          Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
          Indicator = Indicador,
          Año = as.numeric(Año))
-natalidad <- read_xlsx("Datos/Natalidad.xlsx") |> 
+natalidad <- read_xlsx("www/Datos/Natalidad.xlsx") |> 
   rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
   mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                           str_detect(Pais, "Bolivia") ~ "Bolivia",
@@ -83,7 +90,7 @@ natalidad <- read_xlsx("Datos/Natalidad.xlsx") |>
 
 # Carga de traducciones ----------
 
-Traducciones <- read_xlsx("Datos/Traducciones variables.xlsx")
+Traducciones <- read_xlsx("www/Datos/Traducciones variables.xlsx")
 
 
 
@@ -417,7 +424,9 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
   
 }
 
-## Graf areas empleo --------------
+## Graf areas --------------
+#### Areas empleo tipo empresa ---------------
+
 datos_graf_areas <- filter(Economia, str_detect(Indicador, "Empleo en "), Indicador != "Empleo en MIPYMES, % del total", Pais != "Paraguay")
 
 i <- 1
@@ -479,7 +488,7 @@ for (pais in unique(datos_graf_areas$Pais)) {
 graf_areas <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, plot_areas_5, plot_areas_6,
         nrows = 1)
 
-
+#### Areas tipo empresas ---------------
 
 datos_graf_areas <- filter(Economia, str_detect(Indicador, "% del total de empresas"), Indicador != "MIPYMES, % del total de empresas",Indicador != "PYMEs, % del total de empresas", Pais != "Paraguay", Pais != "Venezuela")
 
@@ -543,6 +552,70 @@ for (pais in unique(datos_graf_areas$Pais)) {
 graf_areas_2 <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, plot_areas_5, plot_areas_6,plot_areas_7,
                       nrows = 1)
 
+
+#### Areas empleo sector ---------------
+
+
+datos_graf_areas <- filter(Trabajo, str_detect(Indicador, "% del empleo total"))
+
+i <- 1
+
+for (pais in unique(datos_graf_areas$Pais)) {
+  datos_graf_areas_pais <- filter(datos_graf_areas, Pais == pais)
+  
+  graf_areas_3 <- plot_ly(x = unique(datos_graf_areas_pais$Año), y = filter(datos_graf_areas_pais, Indicador == "Empleo en agricultura, % del empleo total")$Valor, name = 'Empleo en agricultura', type = 'scatter', mode = 'none', stackgroup = 'one', groupnorm = 'percent', fillcolor = '#ACFF47') |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Empleo en industria, % del empleo total")$Valor, name = 'Empleo en industrias', fillcolor = '#6D64B9', opacity = 0.3) |> 
+    add_trace(y = filter(datos_graf_areas_pais, Indicador == "Empleo en servicios, % del empleo total")$Valor, name = 'Empleo en servicios', fillcolor = '#41cadb', opacity = 0.3) |> 
+    layout(
+      font = list(color = "#bcc3c7", family = "Arial"),
+      margin = list(l = 0, r = 0),
+      paper_bgcolor = "#272c30",
+      plot_bgcolor ="#272c30",
+      showlegend = F,
+      xaxis = list(showgrid = FALSE,
+                   fixedrange = T,
+                   range = list(min(unique(datos_graf_areas_pais$Año)), max(unique(datos_graf_areas_pais$Año)))),
+      yaxis = list(
+        range = list(0,102),
+        fixedrange = T,
+        title = NULL,
+        zeroline = FALSE,      # Remove the zero line
+        showline = FALSE,      # Remove the axis line
+        showgrid = FALSE,      # Remove grid lines
+        ticks = "",            # Remove ticks
+        showticklabels = FALSE, # Already removed the tick labels
+        automargin = T,
+        ticksuffix = '%'    # Adjust margins automatically
+      ),
+      shapes = list(
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 20, y1 = 20, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 40, y1 = 40, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 60, y1 = 60, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 80, y1 = 80, 
+             line = list(dash = "dot", color = "#272c30")),
+        list(type = "line", x0 = min(datos_graf_areas_pais$Año), x1 = max(datos_graf_areas_pais$Año), y0 = 50, y1 = 50, 
+             line = list(color = "#272c30"))
+      ),
+      annotations = list(
+        list(x = median(datos_graf_areas_pais$Año), y = 102, text = pais, showarrow = FALSE, xanchor = 'middle', font = list(size = 14,color = "#bcc3c7")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 20+2, text = "20%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 40+2, text = "40%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 60+2, text = "60%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30")),
+        list(x = min(datos_graf_areas_pais$Año) + 0.1, y = 80+2, text = "80%", showarrow = FALSE, xanchor = 'left', font = list(color = "#272c30"))
+      ),
+      hoverlabel = list(font = list(size = 15, color = "#bcc3c7"),
+                        namelength = -1),
+      hovermode = "x unified"
+    )
+  assign(paste0("plot_areas_",i), graf_areas_3)
+  i = i+1
+}
+
+graf_areas_3 <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, plot_areas_5, plot_areas_6,plot_areas_7,plot_areas_8,plot_areas_9,plot_areas_10,plot_areas_11,plot_areas_12,
+                        nrows = 2)
 
 ## Bump chart ----------------------------
 
@@ -622,7 +695,6 @@ graf_bump <- function(dataset, indicador) {
 graf_lollipop <- function(dataset, indicador, orden, anio) {
   
   data_lollipop <- filter(dataset, str_detect(Indicador, indicador), Año == anio)
-  print(data_lollipop)
   
   if (orden == "Máximo valor") {
     level <- unique(arrange(data_lollipop, desc(Valor))$Pais)
@@ -697,7 +769,7 @@ graf_bar <- function(dataset, indicador, anio) {
     aes(y = Valor, x = Pais) +
     geom_col(fill = "#41cadb") +
     scale_y_continuous(limits = c(0, maximo)) +
-    ylab(label = indicador)
+    ylab(label = ifelse(str_detect(indicador, "[%]") | str_detect(indicador, "porcentaje") | str_detect(indicador, "Porcentaje"), "Porcentaje", indicador))
   
   ggplotly(graf)
 }
@@ -787,7 +859,7 @@ ui <- dashboardPage(
         tabName = "pag_principal",
         
         h1("Que los datos te cuenten la historia", style = "text-align: center;"),
-        h3("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
+        h4("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
         
         # Video Youtube
         div(
@@ -1020,10 +1092,9 @@ ui <- dashboardPage(
               column(4,
                      pickerInput(inputId = "indicador_vida_total",
                                  label = "Población total",
-                                 choices = c(unique(filter(vida_poblacion, Indicador != "Población de 65 años y más, % de la población total",
+                                 choices = unique(filter(vida_poblacion, Indicador != "Población de 65 años y más, % de la población total",
                                                            str_detect(Indicador, "\\(% de la población\\)") | str_detect(Indicador, " total, porcentaje") | str_detect(Indicador, "% de la población total"),
-                                 )$Indicador),
-                                 "Población inmigrante")), br(),
+                                 )$Indicador)), br(),
                      sliderTextInput(inputId = "dona_vida_anio_1",
                                      label = "Año",
                                      grid = T,
@@ -1094,7 +1165,7 @@ ui <- dashboardPage(
         
         br(),
         ## Pobreza --------------------------
-        h2("Pobreza"),
+        h2("Pobreza y ayudas sociales"),
         
         br(),
         box(width = 12,
@@ -1156,7 +1227,12 @@ ui <- dashboardPage(
                         choices = c(
                           "Ingreso Nacional Bruto per cápita (PPP$ 2017)",
                           "Desigualdad en ingresos",
-                          "Índice de estricta respuesta gubernamental"
+                          "Índice de estricta respuesta gubernamental",
+                          "Deuda neta como porcentaje del PIB",
+                          "Estimaciones de Producción Informal, porcentaje del PIB oficial",
+                          "Inflación, cambio porcentual",
+                          "Préstamos/endeudamiento neto del gobierno como porcentaje del PIB",
+                          "Índice de Gini"
                         )), br(),
             plotlyOutput("graf_bump_economia"),
             accordion(
@@ -1167,15 +1243,21 @@ ui <- dashboardPage(
                 textOutput("descripcion_indicador_economia_bump")
               ))
             ),
+        br(),
+        ## Trabajo ----------------
+        
+        h2("Trabajo"),
+        br(),
         # Grafico de areas
         box(width = 12,
             pickerInput(inputId = "indicador_economia_areas",
                         label = "Indicador",
                         choices = c(
-                          "Distribución del empleo",
+                          "Distribución del empleo por tipo de empresas",
+                          "Distribución del empleo por sector",
                           "Distribución de tamaño de empresas"
                         )), br(),
-            plotlyOutput("graf_areas")
+            plotlyOutput("graf_areas", height = "600px")
             ),
         
         # Grafico lollipop
@@ -1184,7 +1266,8 @@ ui <- dashboardPage(
                         label = "Indicador",
                         choices = c(
                           "Tasa de participación en la fuerza laboral",
-                          "Ingreso Nacional Bruto per cápita"
+                          "Ingreso Nacional Bruto per cápita",
+                          "Porcentaje de empleo fuera del sector formal por sexo"
                         ))),
             column(4,
                    pickerInput(inputId = "orden_economia_lollipop",
@@ -1921,14 +2004,27 @@ server <- function(input, output, session) {
   ### Bump plot --------------
   
   output$graf_bump_economia <- renderPlotly({
-    graf_bump(dataset = Economia, indicador = input$indicador_economia_bump)
+    
+    if (input$indicador_economia_bump %in% c("Deuda neta como porcentaje del PIB",
+                "Estimaciones de Producción Informal, porcentaje del PIB oficial",
+                "Inflación, cambio porcentual",
+                "Préstamos/endeudamiento neto del gobierno como porcentaje del PIB",
+                "Índice de Gini")) {
+      graf_evolutivo(Economia, input$indicador_economia_bump)
+    } else {
+      graf_bump(dataset = Economia, indicador = input$indicador_economia_bump)
+    }
+    
+    
   })
   
   ### Grafico de areas --------------
   
   output$graf_areas <- renderPlotly({
-    if (input$indicador_economia_areas == "Distribución del empleo"){
+    if (input$indicador_economia_areas == "Distribución del empleo por tipo de empresas"){
       graf_areas
+    } else if (input$indicador_economia_areas == "Distribución del empleo por sector"){
+      graf_areas_3
     } else {
       graf_areas_2
     }
@@ -1938,7 +2034,7 @@ server <- function(input, output, session) {
   ### Lolliepop Economia ------------
   
   output$lollipop_economia <- renderPlotly({
-    graf_lollipop(dataset = Economia, indicador = input$indicador_economia_lollipop,
+    graf_lollipop(dataset = economia_trabajo, indicador = input$indicador_economia_lollipop,
                   orden = input$orden_economia_lollipop, anio = input$anio_economia_lollipop)
     
   })
@@ -2259,18 +2355,16 @@ shinyApp(ui = ui, server = server)
 
 # Ideas ------------------
 
-# Unir bases de datos: Poblacion-Vida-pobreza, Ciencia-Educacion, Trabajo-Economia
-
 # Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
 
 # Opcion de crear tu propio grafico
 
-# Graficos de radar para comparar dos paises en componentes cluster
+# Agregar grafico para trabajo en las diversas categorias
+
+# Modificar el boton de play de los slider input con años
+
 
 # Arreglar-------------
 
 # Data en hover me tira la info de la recta tmb, evitando que pueda comparar mas paises
 
-# Modificar el boton de play de los slider input con años
-
-# Grafico lollipop en pobreza, el slider da null
