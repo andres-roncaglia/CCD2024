@@ -369,9 +369,11 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
     return(ggplotly(graf))
   }
   
-  base_datos <- filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona) |> 
-    complete(Año = full_seq(Año, 1), Pais) |>  
-    fill(Valor, .direction = "down") # Si el año no tiene medicion toma la del ultimo año que tenga
+  base_datos <- filter(base_datos, Pais == Pais_dona, Indicador == indicador_dona) |>
+    complete(Año = full_seq(Año, 1)) |>  
+    group_by(Pais) |> 
+    fill(Valor, .direction = "down") |> # Si el año no tiene medicion toma la del ultimo año que tenga
+    ungroup()
   
   if (maximo == "proporcion") {
     maximo <- 100
@@ -546,8 +548,10 @@ graf_areas_2 <- subplot(plot_areas_1,plot_areas_2, plot_areas_3, plot_areas_4, p
 
 graf_bump <- function(dataset, indicador) {
   data_bump <- filter(dataset, Indicador == indicador) |>
-    complete(Año = full_seq(Año, 1), Pais) |>  
+    complete(Año = full_seq(Año, 1)) |>  
+    group_by(Pais) |> 
     fill(Valor, .direction = "down") |> 
+    ungroup() |> 
     group_by(Año) |> 
     mutate(pos = rank(Valor),
            Posicion = abs(length(unique(Pais))-pos+1))
@@ -618,7 +622,7 @@ graf_bump <- function(dataset, indicador) {
 graf_lollipop <- function(dataset, indicador, orden, anio) {
   
   data_lollipop <- filter(dataset, str_detect(Indicador, indicador), Año == anio)
-  
+  print(data_lollipop)
   
   if (orden == "Máximo valor") {
     level <- unique(arrange(data_lollipop, desc(Valor))$Pais)
@@ -673,6 +677,29 @@ graf_piramide <- function(pais, anio) {
              yanchor = "bottom"  
            ))
   
+}
+
+## Grafico Barplot -----------------
+
+graf_bar <- function(dataset, indicador, anio) {
+  datos_barplot <- filter(dataset, Indicador == indicador) |> 
+    complete(Año = full_seq(Año, 1), Pais) |>  
+    group_by(Pais) |>
+    fill(Valor, .direction = "down")
+  
+  datos_barplot$Pais <- factor(datos_barplot$Pais, levels = unique(datos_barplot$Pais))
+  
+  maximo <- max(datos_barplot$Valor, na.rm = TRUE)
+  
+  graf <- datos_barplot |> 
+    filter(Año == anio) |>
+    ggplot() +
+    aes(y = Valor, x = Pais) +
+    geom_col(fill = "#41cadb") +
+    scale_y_continuous(limits = c(0, maximo)) +
+    ylab(label = indicador)
+  
+  ggplotly(graf)
 }
 
 # Items del carrusel ------------
@@ -977,7 +1004,7 @@ ui <- dashboardPage(
             )
             
             ),
-        
+        ## Calidad de vida -------------------
         br(),
         h2("Calidad de vida"),
         br(),
@@ -1066,11 +1093,54 @@ ui <- dashboardPage(
             ),
         
         br(),
-        
+        ## Pobreza --------------------------
         h2("Pobreza"),
         
         br(),
-        box(width = 12)
+        box(width = 12,
+            column(10, offset = 1,
+                   pickerInput(inputId = "indicador_barras_pobreza",
+                               label = "Indicador",
+                               choices = sort(c(
+                                 "Tasa de pobreza a $6.85 al día (PPP 2017), % de la población",
+                                 "Tasa de pobreza a $3.65 al día (PPP 2017), % de la población",
+                                 "Tasa de pobreza a $2.15 al día (PPP 2017), % de la población",
+                                 "Gasto promedio per cápita en salud de bolsillo por hogar ($ 2011 PPP)",
+                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $5.50",
+                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $3.20",
+                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $1.90",
+                                 "Proporción de la población mayor de edad para pensiones que recibe una pensión, total",
+                                 "Proporción de la población empujada por debajo de la línea de pobreza del 60% del consumo mediano por gastos de salud de bolsillo (%)",
+                                 "Población cubierta por al menos un beneficio de protección social, total",
+                                 "Personas Vulnerables Cubiertas por Asistencia Social, porcentaje",
+                                 "Personas pobres cubiertas por sistemas de protección social, porcentaje",
+                                 "Personas con discapacidades severas recibiendo beneficios de protección social por discapacidad",
+                                 "Niños/Hogares que reciben beneficios en efectivo para niños/familias, porcentaje",
+                                 "Madres con recién nacidos recibiendo beneficios de maternidad, Femeninas",
+                                 "Adecuación de los programas de protección social (porcentaje del bienestar total de los hogares beneficiarios)"
+                               ))),
+                   
+                   sliderTextInput(inputId = "anio_pobreza_barra",
+                                   label = "Año",
+                                   grid = T,
+                                   choices = sort(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año)),
+                                   selected = max(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año))
+                   ),
+                   
+                   plotlyOutput("barras_pobreza"),
+                   
+                   accordion(
+                     id = "acordion_barras_pobreza",
+                     accordionItem(
+                       title = "Descripción del indicador",
+                       collapsed = F,
+                       textOutput("des_barras_pobreza")
+                       ))
+                   
+                   )
+            
+            
+            )
         
       ),
       
@@ -1214,16 +1284,32 @@ ui <- dashboardPage(
         br(),
         box(width = 12,
             fluidRow(
-          column(9,
+              column(3,
+                     pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[2])
+                     ),
+              column(3,
+                     pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[3])
+                     ),
+              
+              
+              column(3,
+                     pickerInput(inputId = "pais_radar_1", label = "País", choices = unique(datos_cluster$Pais), selected = unique(datos_cluster$Pais)[1])
+                     ),
+              column(3,
+                     pickerInput(inputId = "pais_radar_2", label = "País", choices = unique(datos_cluster$Pais), selected = unique(datos_cluster$Pais)[2])
+                     )
+            ),
+            
+            fluidRow(
+          column(7,
                  plotlyOutput("graf_acp")),
+
           
-          column(2, 
-                 fluidRow(
-                   pickerInput(inputId = "componentex", label = "Componente en el eje x", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[2])
-                   ),
-                 fluidRow(
-                   pickerInput(inputId = "componentey", label = "Componente en el eje y", choices = colnames(datos_cluster)[2:6], selected = colnames(datos_cluster)[3])
-                 ))
+          column(5,
+                 
+                 plotlyOutput("graf_radar")
+                 
+                 )
         ))
       ),
       
@@ -1801,6 +1887,35 @@ server <- function(input, output, session) {
               maximo = "proporcion")
   })
   
+  ### Barras pobreza ---------------------
+  
+  output$des_barras_pobreza <- renderText({
+    
+    filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Descripción[1]
+    
+  })
+  
+  observeEvent(input$indicador_barras_pobreza, {
+    
+    base_datos <- Pobreza
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "anio_pobreza_barra",
+      choices = sort(unique(filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Año)),
+      selected = max(unique(filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Año))
+    )
+    
+  })
+  
+  
+  
+  output$barras_pobreza <- renderPlotly({
+    
+    graf_bar(dataset = Pobreza,indicador = input$indicador_barras_pobreza,anio = input$anio_pobreza_barra)
+    
+  })
+  
   ## Economia -------------------------
   
   ### Bump plot --------------
@@ -2018,6 +2133,67 @@ server <- function(input, output, session) {
     graf_acp <- ggplotly(graf_acp, tooltip = c("Pais", "Grupo", "x", "y"))
   })
   
+  ### Grafico Radar -------------------
+  
+  output$graf_radar <- renderPlotly({
+    
+    datos_radar <- acp$ind$coord[,1:num_cp] |> 
+      bind_cols(Pais = datos_cluster$Pais)
+    
+    datos_pais_1 <- filter(datos_radar, Pais == input$pais_radar_1)
+    datos_pais_2 <- filter(datos_radar, Pais == input$pais_radar_2)
+
+    
+    plot_ly(
+      type = 'scatterpolar',
+      fill = 'toself',
+      mode = "markers") |>
+      add_trace(
+        r = rep(1000, times = 5),
+        theta = colnames(datos_pais_1)[1:5],
+        name = "COLOR_FONDO",
+        fillcolor = "#272c30",
+        line = list(color = "transparent"),
+        showlegend = FALSE,
+        hoverinfo = "none",
+        opacity = 0.85) |> 
+      add_trace(
+        r = c(datos_pais_1$Dim.1,datos_pais_1$Dim.2,datos_pais_1$Dim.3,datos_pais_1$Dim.4,datos_pais_1$Dim.5),
+        theta = colnames(datos_pais_1)[1:num_cp],
+        name = datos_pais_1$Pais,
+        fillcolor = "#41cadb",
+        opacity = 0.5,
+        marker = list(color = "#207AAB")) |> 
+      add_trace(
+        r = c(datos_pais_2$Dim.1,datos_pais_2$Dim.2,datos_pais_2$Dim.3,datos_pais_2$Dim.4,datos_pais_2$Dim.5),
+        theta = colnames(datos_pais_2)[1:num_cp],
+        name = datos_pais_2$Pais,
+        fillcolor = "#ACFF47",
+        opacity = 0.5,
+        marker = list(color = "#31E000")) |> 
+      layout(
+        polar = list(
+          bg_color = "#272c30",
+          radialaxis = list(
+            visible = T,
+            range = c(min(datos_radar[1:num_cp]), max(datos_radar[1:num_cp])),
+            color = "white",
+            gridcolor = "black"
+          ),
+          angularaxis = list(
+            linecolor = "#bcc3c7"
+          )
+          
+        ),
+        hovermode = "x unified",
+        font = list(color = "#bcc3c7", family = "Arial"),
+        paper_bgcolor = "#272c30",
+        plot_bgcolor ="#272c30"
+      )
+    
+    
+  })
+  
   ## Bases de datos -------------
   
   ### Boton descarga --------------------
@@ -2087,11 +2263,9 @@ shinyApp(ui = ui, server = server)
 
 # Agregar regiones de tiempo de eventos, clickear la region abre mas abajo una descripcion
 
-# Series de tiempo para educacion hacer 
-
-# Series de tiempo transformables a bump plots
-
 # Opcion de crear tu propio grafico
+
+# Graficos de radar para comparar dos paises en componentes cluster
 
 # Arreglar-------------
 
@@ -2099,6 +2273,4 @@ shinyApp(ui = ui, server = server)
 
 # Modificar el boton de play de los slider input con años
 
-# Filtrar en cada base de datos los indicadores únicos y que correspondan a cada base
-
-# Cortar barra de busqueda indicadores en graf correlacion
+# Grafico lollipop en pobreza, el slider da null
