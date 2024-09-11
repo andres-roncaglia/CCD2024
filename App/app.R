@@ -45,7 +45,10 @@ transporte_publico <- read.csv("www/Datos/Acceso transporte publico.csv") |>
          Codigo = Code,
          Pais = Entity) |> 
   mutate(Indicador = "Porcentaje de la poblacion con acceso conveniente al transporte público",
-         Descripción = "Porcentaje de la poblacion con acceso conveniente al transporte público")
+         Descripción = "Porcentaje de la poblacion con acceso conveniente al transporte público",
+         Pais = case_when(Pais == "Brazil" ~ "Brasil",
+                          Pais == "Peru" ~ "Perú",
+                               T ~ Pais))
 
 emisiones <- read.csv("www/Datos/Emisiones de co2.csv")|> 
   rename(Valor = Per.capita.carbon.dioxide.emissions.from.transport,
@@ -53,7 +56,10 @@ emisiones <- read.csv("www/Datos/Emisiones de co2.csv")|>
          Codigo = Code,
          Pais = Entity) |> 
   mutate(Indicador = "Emisiones CO2 por el transporte (per capita)",
-         Descripción = "Emisiones de Dioxido de carbono per capita emitidas por el transporte")
+         Descripción = "Emisiones de Dioxido de carbono per capita emitidas por el transporte",
+         Pais = case_when(Pais == "Brazil" ~ "Brasil",
+                          Pais == "Peru" ~ "Perú",
+                          T ~ Pais))
 
 
 
@@ -108,6 +114,7 @@ prep <- function(x) {
         Pais == "Bolivia (Plurinational State of)" ~ "Bolivia",
         Pais == "Venezuela (Bolivarian Republic of)" ~ "Venezuela", 
         Pais == "Brazil" ~ "Brasil", 
+        Pais == "Peru" ~ "Perú", 
         T ~ Pais),
       Año = as.numeric(Año)) |> 
     left_join(Traducciones, by = "Indicador") |> 
@@ -171,7 +178,7 @@ tema_graficos <- theme_minimal() +
 theme_set(tema_graficos)
 
 
-# Tema de las tablas --------------
+# CSS Configuracion --------------
 
 estilotablas <- function() {
   tags$head(
@@ -206,6 +213,20 @@ estilotablas <- function() {
         background-color: #272c30 !important;
         color: black !important;
         border-color: #272c30 !important;
+      }
+      
+      /* Boton play */
+      
+      .play-bttn {
+      
+        background: #0F0E0E;
+        color: #bcc3c7;
+      
+      }
+      
+      .play-bttn:hover {
+        color = #0F0E0E;
+        background: #bcc3c7;
       }
       
     "))
@@ -289,6 +310,7 @@ data(world)
 
 datos_mapa <- filter(world, continent == "South America") |> 
   mutate(name_long = case_when(name_long == "Brazil" ~ "Brasil",
+                               name_long == "Peru" ~ "Perú",
                                T ~ name_long)) |> 
   arrange(name_long) |> 
   filter(iso_a2 != "FK") 
@@ -405,11 +427,8 @@ graf_dona <- function(base_datos, Pais_dona, Anio_dona, indicador_dona, maximo =
       
       bar = list(color = "#41cadb"),
       
-      axis =list(range = list(NULL, maximo), tickcolor = "#bcc3c7"),
+      axis =list(range = list(NULL, maximo), tickcolor = "#bcc3c7")
       
-      steps = list(
-        
-        list(range = c(0, max(base_datos$Valor)), color = "#1B2845"))
       )) |> 
     config(responsive = F) |> 
     layout(
@@ -727,6 +746,8 @@ graf_piramide <- function(pais, anio) {
   
   level <- unique(poblacion_edad$`Grupos quinquenales de edad`)
   
+  maximo <- max(filter(poblacion_edad, Pais == pais, Sexo != "Ambos sexos")$Valor)
+  
   data <- poblacion_edad |> 
     mutate(Edad = factor(`Grupos quinquenales de edad`, levels = level),
            Valor = ifelse(Sexo == "Hombres", -Valor, Valor)) |> 
@@ -734,7 +755,7 @@ graf_piramide <- function(pais, anio) {
   
   graf <- ggplot(data, aes(x = Edad, y = Valor, fill = Sexo)) +
     geom_bar(stat = "identity", position = "identity", width = 1) +
-    scale_y_continuous(labels = abs) +  # Mostrar números positivos en el eje y
+    scale_y_continuous(labels = abs, limits = c((-1)*maximo, maximo)) +  # Mostrar números positivos en el eje y
     labs(x = "Edad", y = "Población (miles)") +
     scale_fill_manual(values = c("Mujeres" = "#F1C8DB", "Hombres" = "#41CADB")) +
     coord_flip()
@@ -774,6 +795,40 @@ graf_bar <- function(dataset, indicador, anio) {
   ggplotly(graf)
 }
 
+## Barplot agrupado ------------------
+
+graf_bar_agrup <- function(dataset, anio, pais, indicador) {
+  
+  
+  datos_barras <- dataset |> filter(Pais == pais, Año == anio, 
+                                    str_detect(Indicador, indicador))
+  
+  
+  txt <- strsplit(datos_barras$Indicador, ",")
+  for (i in 1:nrow(datos_barras)) {
+    
+    segments <- trimws(txt[[i]])
+    
+    datos_barras$Indicador[i] <- segments[1]
+    datos_barras$Sexo[i] <- segments[2]
+    datos_barras$Tipo1[i] <- segments[3]
+    datos_barras$Tipo[i] <- paste0(segments[2: length(segments)], collapse = ", ")
+    
+  }
+  
+  graf <- datos_barras |>
+    arrange(Sexo) |>  
+    ggplot() +
+    geom_col(aes(x = Tipo1, y = Valor, fill = Sexo), position = "dodge") +
+    ylab(label = ifelse(str_detect(datos_barras$Indicador[1], "Propor"), "Porcentaje", datos_barras$Indicador[1])) +
+    xlab("Tipo") +
+    scale_fill_manual(values = c("#F1C8DB", "#41CADB", "#ACFF47")) +
+    scale_y_continuous(limits = c(0,100))
+  
+  ggplotly(graf)
+  
+}
+
 # Items del carrusel ------------
 
 carrusel_item <- function(indicador, num) {
@@ -787,7 +842,12 @@ carrusel_item <- function(indicador, num) {
                              grid = T,
                              choices = sort(unique(filter(Educacion, Indicador == indicador)$Año)),
                              selected = max(filter(Educacion, Indicador == indicador)$Año),
-                             animate = T)),
+                             animate = animationOptions(
+                               interval = 600,
+                               loop = FALSE,
+                               playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                               pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
+                             )),
       br(),
       
       flipBox(
@@ -859,12 +919,12 @@ ui <- dashboardPage(
         tabName = "pag_principal",
         
         h1("Que los datos te cuenten la historia", style = "text-align: center;"),
-        h4("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo."),
+        h5("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo.", style = "text-align: center;"),
         
         # Video Youtube
         div(
           style = "display: flex; justify-content: center;",
-          HTML('<iframe width="60%" height="300" src="https://www.youtube.com/embed/zG8WQ29_kkU?si=0lf053cmNaI11Wbr" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
+          HTML('<iframe width="60%" height="300" src="https://www.youtube.com/embed/AjWfY7SnMBI?si=er7sgxVxBg5sc5ux" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
         ),
         br(),
         ## Primera hilera de botones ---------------------
@@ -910,14 +970,19 @@ ui <- dashboardPage(
               fluidRow(column(7, 
                               pickerInput(inputId = "indicador_ciencia",
                                           label = "Indicador",
-                                          choices = unique(Ciencia$Indicador),
+                                          choices = unique(filter(Ciencia, Indicador != "Proporción de la fuerza laboral con educación avanzada")$Indicador),
                                           selected = unique(Ciencia$Indicador)[1])),
                        column(5,
                               sliderTextInput(inputId = "mapa_ciencia_anio",
                                               label = "Año",
                                               grid = T,
                                               choices = sort(unique(Ciencia$Año)),
-                                              selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año)
+                                              selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año),
+                                              animate = animationOptions(
+                                                interval = 600,
+                                                loop = FALSE,
+                                                playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                                pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                               ))),
               
               fluidRow(
@@ -1028,14 +1093,19 @@ ui <- dashboardPage(
         br(),
         box(width = 12,
             fluidRow(
-              column(4, 
+              column(4, offset = 1, 
                      sliderTextInput(inputId = "piramide_anio",
                                      label = "Año",
                                      grid = T,
                                      choices = sort(unique(filter(poblacion_edad, Pais =="Argentina")$Año)),
-                                     selected = max(unique(filter(poblacion_edad, Pais =="Argentina")$Año))
+                                     selected = max(unique(filter(poblacion_edad, Pais =="Argentina")$Año)),
+                                     animate = animationOptions(
+                                       interval = 600,
+                                       loop = FALSE,
+                                       playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                       pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                      )),
-              column(width = 2, offset = 1,
+              column(width = 2,
                      pickerInput(inputId = "piramide_pais",
                                  label = "País",
                                  unique(poblacion_edad$Pais))
@@ -1099,7 +1169,12 @@ ui <- dashboardPage(
                                      label = "Año",
                                      grid = T,
                                      choices = sort(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año)),
-                                     selected = max(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año))
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Población Urbana, total")$Año)),
+                                     animate = animationOptions(
+                                       interval = 600,
+                                       loop = FALSE,
+                                       playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                       pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                      ),
                      flipBox(
                        id = "dona_vida_1",
@@ -1122,7 +1197,12 @@ ui <- dashboardPage(
                                      label = "Año",
                                      grid = T,
                                      choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año)),
-                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año))
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, urbano (% de la población urbana)")$Año)),
+                                     animate = animationOptions(
+                                       interval = 600,
+                                       loop = FALSE,
+                                       playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                       pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                      ),
                      flipBox(
                        id = "dona_vida_2",
@@ -1145,7 +1225,12 @@ ui <- dashboardPage(
                                      label = "Año",
                                      grid = T,
                                      choices = sort(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año)),
-                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año))
+                                     selected = max(unique(filter(vida_poblacion, Indicador =="Acceso a electricidad, rural (% de la población rural)")$Año)),
+                                     animate = animationOptions(
+                                       interval = 600,
+                                       loop = FALSE,
+                                       playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                       pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                      ),
                      flipBox(
                        id = "dona_vida_3",
@@ -1195,7 +1280,12 @@ ui <- dashboardPage(
                                    label = "Año",
                                    grid = T,
                                    choices = sort(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año)),
-                                   selected = max(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año))
+                                   selected = max(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año)),
+                                   animate = animationOptions(
+                                     interval = 600,
+                                     loop = FALSE,
+                                     playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                     pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                    ),
                    
                    plotlyOutput("barras_pobreza"),
@@ -1266,8 +1356,7 @@ ui <- dashboardPage(
                         label = "Indicador",
                         choices = c(
                           "Tasa de participación en la fuerza laboral",
-                          "Ingreso Nacional Bruto per cápita",
-                          "Porcentaje de empleo fuera del sector formal por sexo"
+                          "Ingreso Nacional Bruto per cápita"
                         ))),
             column(4,
                    pickerInput(inputId = "orden_economia_lollipop",
@@ -1280,7 +1369,13 @@ ui <- dashboardPage(
                             label = "Año",
                             grid = T,
                             choices = sort(unique(filter(Economia, str_detect(Indicador,"Tasa de participación en la fuerza laboral"))$Año)),
-                            selected = max(unique(filter(Economia, str_detect(Indicador,"Tasa de participación en la fuerza laboral"))$Año))),
+                            selected = max(unique(filter(Economia, str_detect(Indicador,"Tasa de participación en la fuerza laboral"))$Año)),
+                            animate = animationOptions(
+                              interval = 600,
+                              loop = FALSE,
+                              playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                              pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
+                            ),
             
             plotlyOutput("lollipop_economia"),
             accordion(
@@ -1290,7 +1385,42 @@ ui <- dashboardPage(
                 collapsed = F,
                 textOutput("des_lollipop_economia")
               ))
-            )
+            ),
+        
+        # Grafico barras agrupadas
+        box(width = 6,
+            column(8,pickerInput(inputId = "indicador_economia_barras",
+                                 label = "Indicador",
+                                 choices = c(
+                                   "Proporción de empleo informal por sexo y actividad económica",
+                                   "Proporción de empleo informal por sexo y edad",
+                                   "Proporción de empleo informal por sexo y estado en el empleo"
+                                 ))),
+            column(4,
+                   pickerInput(inputId = "pais_economia_barras",
+                               label = "Pais",
+                               choices = unique(filter(Trabajo, Pais != "Venezuela", Pais != "Suriname",)$Pais))),
+            sliderTextInput(inputId = "anio_economia_barras",
+                            label = "Año",
+                            grid = T,
+                            choices = sort(unique(filter(Trabajo, str_detect(Indicador,"Proporción de empleo informal por sexo y actividad económica"))$Año)),
+                            selected = max(unique(filter(Trabajo, str_detect(Indicador,"Proporción de empleo informal por sexo y actividad económica"))$Año)),
+                            animate = animationOptions(
+                              interval = 600,
+                              loop = FALSE,
+                              playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                              pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
+                            ),
+            
+            plotlyOutput("barras_economia"),
+            accordion(
+              id = "acordion_economia_barras",
+              accordionItem(
+                title = "Descripción del indicador",
+                collapsed = F,
+                textOutput("des_barras_economia")
+              ))
+        )
         
         
       ),
@@ -1321,12 +1451,9 @@ ui <- dashboardPage(
                  ),
                  fluidRow(
                    pickerInput(inputId = "var_corr_2", label = "Indicador eje y", choices = list(
-                     Desarrollo = unique(ciencia_educacion$Indicador), 
-                     "Vida Y Población" = unique(vida_poblacion$Indicador), 
-                     Economia = unique(Economia$Indicador), 
-                     Poblacion = unique(Poblacion$Indicador), 
-                     Pobreza = unique(Pobreza$Indicador), 
-                     Trabajo = unique(Trabajo$Indicador)
+                     "Desarrollo y educación" = setNames(sort(unique(ciencia_educacion$Indicador)), ifelse(str_count(sort(unique(ciencia_educacion$Indicador))) > 80, paste0(str_sub(sort(unique(ciencia_educacion$Indicador)), start = 1, end = 80), "..."), sort(unique(ciencia_educacion$Indicador)))), 
+                     "Vida y población" = setNames(sort(unique(vida_poblacion$Indicador)), ifelse(str_count(sort(unique(vida_poblacion$Indicador))) > 80, paste0(str_sub(sort(unique(vida_poblacion$Indicador)), start = 1, end = 80), "..."), sort(unique(vida_poblacion$Indicador)))), 
+                     "Economia y trabajo" = setNames(sort(unique(economia_trabajo$Indicador)), ifelse(str_count(sort(unique(economia_trabajo$Indicador))) > 80, paste0(str_sub(sort(unique(economia_trabajo$Indicador)), start = 1, end = 80), "..."), sort(unique(economia_trabajo$Indicador))))
                    ), selected = "Tasa de desempleo",
                    options = list(
                      `live-search` = TRUE,
@@ -1336,7 +1463,12 @@ ui <- dashboardPage(
                    sliderTextInput(inputId = "anio_corr",
                                label = "Año",
                                choices = c(2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022),
-                               selected = 2022)
+                               selected = 2022,
+                               animate = animationOptions(
+                                 interval = 600,
+                                 loop = FALSE,
+                                 playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                 pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon"))))
                  ),
                  fluidRow(
                    valueBoxOutput("caja_correlaciones", width = 11)
@@ -2034,8 +2166,29 @@ server <- function(input, output, session) {
   ### Lolliepop Economia ------------
   
   output$lollipop_economia <- renderPlotly({
+    
     graf_lollipop(dataset = economia_trabajo, indicador = input$indicador_economia_lollipop,
                   orden = input$orden_economia_lollipop, anio = input$anio_economia_lollipop)
+    
+  })
+  
+  ### Graf barras agrupadas Economia ----------------------
+  
+  
+  observeEvent(list(input$indicador_economia_barras, input$pais_economia_barras), {
+    
+    updateSliderTextInput(
+      session = session,
+      inputId = "anio_economia_barras",
+      choices = sort(unique(filter(Trabajo, Pais == input$pais_economia_barras, str_detect(Indicador, input$indicador_economia_barras))$Año)),
+      selected = max(unique(filter(Trabajo, Pais == input$pais_economia_barras, str_detect(Indicador, input$indicador_economia_barras))$Año))
+    )
+    
+  }, ignoreNULL = FALSE)
+  
+  output$barras_economia <- renderPlotly({
+    
+    graf_bar_agrup(dataset = Trabajo, anio = input$anio_economia_barras, pais = input$pais_economia_barras, indicador = input$indicador_economia_barras)
     
   })
   
@@ -2047,6 +2200,18 @@ server <- function(input, output, session) {
   
   output$des_lollipop_economia <- renderText({
     filter(Economia, str_detect(Indicador,input$indicador_economia_lollipop))$Descripción[1]
+  })
+  
+  output$des_barras_economia <- renderText({
+    
+    if (str_detect(input$indicador_economia_barras,"Proporción de empleo informal por sexo y actividad económica")) {
+      "Porcentaje de personas trabajando de forma informal por sexo y actividad económica"
+    } else if (str_detect(input$indicador_economia_barras,"Proporción de empleo informal por sexo y edad")) {
+      "Porcentaje de personas trabajando de forma informal por sexo y edad"
+    } else {
+      "Porcentaje de personas trabajando de forma informal por sexo y estado en el empleo"
+    }
+    
   })
   
   ## Analisis -------------------------
@@ -2359,12 +2524,13 @@ shinyApp(ui = ui, server = server)
 
 # Opcion de crear tu propio grafico
 
-# Agregar grafico para trabajo en las diversas categorias
-
-# Modificar el boton de play de los slider input con años
-
 
 # Arreglar-------------
 
 # Data en hover me tira la info de la recta tmb, evitando que pueda comparar mas paises
 
+# En los graficos de semidona el valor de referencia es el año anterior, estaria bueno que sea el ultimo valor anotado
+
+# Arreglar descripciones Economia
+
+# Agregar FUENTES
