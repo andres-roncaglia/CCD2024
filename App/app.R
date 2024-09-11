@@ -61,6 +61,17 @@ emisiones <- read.csv("www/Datos/Emisiones de co2.csv")|>
                           Pais == "Peru" ~ "Perú",
                           T ~ Pais))
 
+gasto_investigacion <- read.csv("www/Datos/Gasto en investigacion.csv") |> 
+  rename(Valor = Research.and.development.expenditure....of.GDP.,
+         Año = Year,
+         Codigo = Code,
+         Pais = Entity) |> 
+  mutate(Indicador = "Porcentaje del GDP invertido en investigación y desarrollo",
+         Descripción = "Porcentaje del GDP invertido en investigación y desarrollo",
+         Pais = case_when(Pais == "Brazil" ~ "Brasil",
+                          Pais == "Peru" ~ "Perú",
+                          T ~ Pais))
+
 
 
 # Carga de datos https://statistics.cepal.org/portal/databank ------------------
@@ -140,7 +151,8 @@ Ciencia <- prep(Ciencia)
 Ciencia <- Ciencia |> 
   bind_rows(
     filter(transporte_publico, Codigo %in% unique(Ciencia$Codigo)),
-    filter(emisiones, Codigo %in% unique(Ciencia$Codigo)))
+    filter(emisiones, Codigo %in% unique(Ciencia$Codigo)),
+    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo)))
 
 Vida <- prep(Vida)
 Economia <- prep(Economia)
@@ -1559,7 +1571,23 @@ ui <- dashboardPage(
               )
             ),
         br(),
-        h2("Fuentes")
+        h2("Fuentes"),
+        br(),
+        
+        HTML("
+             
+              <ul>
+                <li>
+              CEPAL - Comisión Económica para América Latina y el Caribe: CELADE - División de Población de la CEPAL y Naciones Unidas, Departamento de Asuntos Económicos y Sociales, División de Población. (2024). <i> World Population Prospects, 2024, edición online </i>. 
+<a href='https://population.un.org/wpp/'> https://population.un.org/wpp/</a>
+                </li>
+             United Nations Development Programme. (2024). <i> Data Futures Exchange </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
+                <li>
+                  Hannah Ritchie and Edouard Mathieu and Max Roser. (2023). <i> Research and Development </i>. <a href='https://ourworldindata.org/research-and-development'> https://ourworldindata.org/research-and-development</a>
+                </li>
+              </ul> 
+             
+             ")
         
         
         
