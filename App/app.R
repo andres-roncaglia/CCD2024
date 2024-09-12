@@ -1,4 +1,6 @@
-# Usar bslib
+# Para el futuro usar:
+
+# bslib https://www.youtube.com/watch?v=O6WLERr5bKU <- alternativa de dashboardpage
 # echarts4r <- alternativa plotly
 # reactable <- alternativa DT
 # Cargar las librerias necesarias de tidy
@@ -7,19 +9,20 @@
 # Carga de librerias ---------------
 library(shiny)
 library(shinydashboard)
+library(shinydashboardPlus)
 library(shinyWidgets)
+library(readxl)
 library(dplyr)
 library(tidyr)
 library(rlang)
 library(ggplot2)
 library(plotly)
-library(readxl)
 library(RColorBrewer)
 library(DT)
 library(stringr)
 library(zoo)
-library(shinydashboardPlus)
 library(htmlwidgets)
+library(waiter)
 
 # Para el carrusel si mantengo el mouse
 jscode <-"
@@ -239,6 +242,11 @@ estilotablas <- function() {
       .play-bttn:hover {
         color = #0F0E0E;
         background: #bcc3c7;
+      }
+      
+      /* Fix the sidebar to be always visible */
+      .main-sidebar {
+        position: fixed;
       }
       
     "))
@@ -907,6 +915,7 @@ ui <- dashboardPage(
   dashboardHeader(),
   skin = "midnight",
   
+  
   ## Barra de opciones ----------------
   dashboardSidebar(collapsed = T,
                    sidebarMenu(
@@ -922,6 +931,9 @@ ui <- dashboardPage(
   
   
   dashboardBody(
+    useWaiter(), 
+    waiterPreloader(html = spin_1(), color = "#272c30"),
+    
     estilotablas(),
     
     tabItems(
@@ -929,6 +941,7 @@ ui <- dashboardPage(
       # Página principal ------------------
       tabItem(
         tabName = "pag_principal",
+        
         
         h1("Que los datos te cuenten la historia", style = "text-align: center;"),
         h5("Explora, compara y analiza de manera fácil y clara los avances de los paises sudamericanos en diversos tópicos a través del tiempo.", style = "text-align: center;"),
@@ -1581,8 +1594,10 @@ ui <- dashboardPage(
               CEPAL - Comisión Económica para América Latina y el Caribe: CELADE - División de Población de la CEPAL y Naciones Unidas, Departamento de Asuntos Económicos y Sociales, División de Población. (2024). <i> World Population Prospects, 2024, edición online </i>. 
 <a href='https://population.un.org/wpp/'> https://population.un.org/wpp/</a>
                 </li>
-             United Nations Development Programme. (2024). <i> Data Futures Exchange </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
                 <li>
+             Programa de las Naciones Unidas para el Desarrollo. (s.f.). <i> América Latina y el Caribe: Data Futures Platform. Programa de las Naciones Unidas para el Desarrollo. </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
+                </li>
+                  <li>
                   Hannah Ritchie and Edouard Mathieu and Max Roser. (2023). <i> Research and Development </i>. <a href='https://ourworldindata.org/research-and-development'> https://ourworldindata.org/research-and-development</a>
                 </li>
               </ul> 
@@ -1601,7 +1616,8 @@ ui <- dashboardPage(
 
 # Servidor ----------------
 server <- function(input, output, session) {
-  
+  Sys.sleep(1)
+  waiter_hide()
   
   
   ## Botones a cada una de las secciones ----------------------
