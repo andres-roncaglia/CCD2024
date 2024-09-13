@@ -949,7 +949,7 @@ ui <- dashboardPage(
         # Video Youtube
         div(
           style = "display: flex; justify-content: center;",
-          HTML('<iframe width="60%" height="300" src="https://www.youtube.com/embed/AjWfY7SnMBI?si=er7sgxVxBg5sc5ux" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
+          HTML('<iframe width="60%" height="300" src="https://www.youtube.com/embed/SvXGah3Xqjw?si=VASaOoFk1v8-eZCH" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>')
         ),
         br(),
         ## Primera hilera de botones ---------------------
