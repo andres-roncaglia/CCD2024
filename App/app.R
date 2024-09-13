@@ -974,7 +974,20 @@ ui <- dashboardPage(
                  actionBttn("datos", "Bases de datos", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn"),
           ),
           column(4,
-                 actionBttn("github", "Github", block = T, style = "fill", size = "lg", no_outline = F, color = "royal", class = "my-custom-btn", icon = icon("github"))
+                 tags$a(href = "https://github.com/andres-roncaglia/CCD2024", 
+                        target = "_blank",
+                        actionBttn(
+                          inputId = "github",
+                          label = "Github",
+                          block = TRUE,
+                          style = "fill",
+                          size = "lg",
+                          no_outline = FALSE,
+                          color = "royal",
+                          icon = icon("github"), 
+                          class = "my-custom-btn"
+                        )
+                 )
           )
         ), br(),
         h2("Aclaraciones"),
@@ -1592,13 +1605,13 @@ ui <- dashboardPage(
               <ul>
                 <li>
               CEPAL - Comisión Económica para América Latina y el Caribe: CELADE - División de Población de la CEPAL y Naciones Unidas, Departamento de Asuntos Económicos y Sociales, División de Población. (2024). <i> World Population Prospects, 2024, edición online </i>. 
-<a href='https://population.un.org/wpp/'> https://population.un.org/wpp/</a>
+<a href='https://population.un.org/wpp/' target='_blank'> https://population.un.org/wpp/</a>
                 </li>
                 <li>
-             Programa de las Naciones Unidas para el Desarrollo. (s.f.). <i> América Latina y el Caribe: Data Futures Platform. Programa de las Naciones Unidas para el Desarrollo. </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
+             Programa de las Naciones Unidas para el Desarrollo. (s.f.). <i> América Latina y el Caribe: Data Futures Platform. Programa de las Naciones Unidas para el Desarrollo. </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean' target='_blank'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
                 </li>
                   <li>
-                  Hannah Ritchie and Edouard Mathieu and Max Roser. (2023). <i> Research and Development </i>. <a href='https://ourworldindata.org/research-and-development'> https://ourworldindata.org/research-and-development</a>
+                  Hannah Ritchie and Edouard Mathieu and Max Roser. (2023). <i> Research and Development </i>. <a href='https://ourworldindata.org/research-and-development' target='_blank'> https://ourworldindata.org/research-and-development</a>
                 </li>
               </ul> 
              
@@ -1649,9 +1662,9 @@ server <- function(input, output, session) {
     updateTabItems(session, "sidebar", selected = "datos")
   })
   
-  observeEvent(input$github, {
-    browseURL("https://github.com/andres-roncaglia/CCD2024")
-  })
+  # observeEvent(input$github, {
+  #   runjs('window.open("https://github.com/andres-roncaglia/CCD2024", "_blank");')
+  # })
   
   
   ## Desarrollo -------------------------------
