@@ -79,33 +79,51 @@ gasto_investigacion <- read.csv("www/Datos/Gasto en investigacion.csv") |>
 
 # Carga de datos https://statistics.cepal.org/portal/databank ------------------
 
+mod_cepal <- function(data) {
+  data |> 
+    rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
+    mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
+                            str_detect(Pais, "Bolivia") ~ "Bolivia",
+                            T ~ Pais),
+           Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
+           Año = as.numeric(Año),
+           Indicator = Indicador) |> 
+    select(Indicador, Pais, Año, Valor, Codigo, Indicator)
+}
+
 poblacion_edad <- read_xlsx("www/Datos/Poblacion edad.xlsx") |> 
   rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
   mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                           str_detect(Pais, "Bolivia") ~ "Bolivia",
                           T ~ Pais),
-         Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.",
          Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
-         Año = as.numeric(Año))
-esperanza_vida <- read_xlsx("www/Datos/Esperanza de vida.xlsx") |> 
-  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
-  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
-                          str_detect(Pais, "Bolivia") ~ "Bolivia",
-                          T ~ Pais),
-         Descripción = "Representa la duración media de la vida de los individuos, que integran una cohorte hipotética de nacimientos, sometidos en todas las edades a los riesgos de mortalidad del período en estudio",
-         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
-         Indicator = Indicador,
-         Año = as.numeric(Año))
-natalidad <- read_xlsx("www/Datos/Natalidad.xlsx") |> 
-  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
-  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
-                          str_detect(Pais, "Bolivia") ~ "Bolivia",
-                          T ~ Pais),
-         Descripción = "Mide la frecuencia de los nacimientos ocurridos en un período en relación a la población total. Es el cociente entre el número de nacimientos ocurridos durante un período dado y la población media de ese período",
-         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
-         Indicator = Indicador,
-         Año = as.numeric(Año))
+         Año = as.numeric(Año), 
+         Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.")
 
+esperanza_vida <- read_xlsx("www/Datos/Esperanza de vida.xlsx") |> 
+  filter(Sexo == "Ambos sexos") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "Representa la duración media de la vida de los individuos, que integran una cohorte hipotética de nacimientos, sometidos en todas las edades a los riesgos de mortalidad del período en estudio")
+
+natalidad <- read_xlsx("www/Datos/Natalidad.xlsx") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "Mide la frecuencia de los nacimientos ocurridos en un período en relación a la población total. Es el cociente entre el número de nacimientos ocurridos durante un período dado y la población media de ese período")
+
+tramites <- read_xlsx("www/Datos/Tramites gub.xlsx") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "Porcentaje de digitalización de trámites gubernamentales. La metodología empleada para este indicador implica la búsqueda manual en línea de trámites ciudadanos recurrentes ofrecidos por diversas entidades gubernamentales. Estos trámites se clasifican en 16 categorías según su naturaleza. Si al menos un trámite de una categoría se encuentra parcial o totalmente digitalizado en un país, se considera que esa categoría está digitalizada. El porcentaje se calcula como el número de categorías digitalizadas sobre el total de categorías analizadas para cada país.")
+
+empresas_unicornio <- read_xlsx("www/Datos/Empresas unicornio.xlsx") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "Número de empresas unicornio por país de la región. Una empresa unicornio es una startup privada valorada sobre el billón de dólares. Desde CB Insights se obtiene un listado de todas las empresas unicornio y se obtienen las distintas estadísticas descriptivas.")
+
+empresas_ia <- read_xlsx("www/Datos/Empresas IA.xlsx") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "Número de empresas de inteligencia artificial por país de la región. Se recopilaron las primeras 10.000 empresas que operan en la industria de la 'inteligencia artificial', según la definición de Crunchbase, clasificadas por el índice CB en orden descendente. Posteriormente, se generan estadísticas descriptivas a partir de estos datos.")
+
+canasta_digital <- read_xlsx("www/Datos/Canasta digital.xlsx") |> 
+  mod_cepal() |> 
+  mutate(Descripción = "La canasta básica digital está compuesta por los servicios de banda ancha fija y móvil y un smartphone, un computador y una tablet. Para el cálculo, se usa la tarifa mensual de los servicios de banda ancha, el prorrateo mensual del costo de los dispositivos (suponiendo una vida útil de 3 años) y el ingreso mensual promedio de los hogares.")
 
 
 # Carga de traducciones ----------
@@ -155,7 +173,11 @@ Ciencia <- Ciencia |>
   bind_rows(
     filter(transporte_publico, Codigo %in% unique(Ciencia$Codigo)),
     filter(emisiones, Codigo %in% unique(Ciencia$Codigo)),
-    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo)))
+    filter(gasto_investigacion, Codigo %in% unique(Ciencia$Codigo)),
+    tramites,
+    empresas_ia,
+    empresas_unicornio,
+    canasta_digital)
 
 Vida <- prep(Vida)
 Economia <- prep(Economia)
@@ -165,8 +187,8 @@ Pobreza <- prep(Pobreza)
 Trabajo <- prep(Trabajo)
 
 vida_poblacion <- rbind(Vida, Poblacion, Pobreza,
-                        select(filter(esperanza_vida, Sexo == "Ambos sexos"), -c(unit, notes_ids, source_id, Sexo)),
-                        select(natalidad, -c(unit, notes_ids, source_id))) |> 
+                        esperanza_vida,
+                        natalidad) |> 
   distinct(Pais, Codigo, Año, Indicador, .keep_all = TRUE)
 
 ciencia_educacion <- rbind(Ciencia,Educacion) |> 
@@ -363,6 +385,7 @@ graf_mapa = function(base_datos, indicador, anio) {
   
   datos <- left_join(datos_mapa, filter(base_datos, Indicador == indicador, Año == anio), by = c("name_long" = "Pais")) |> 
     rename(Pais = name_long)
+  
   
   pal <- colorNumeric(
     palette = "RdYlGn",
@@ -1008,20 +1031,13 @@ ui <- dashboardPage(
               fluidRow(column(7, 
                               pickerInput(inputId = "indicador_ciencia",
                                           label = "Indicador",
-                                          choices = unique(filter(Ciencia, Indicador != "Proporción de la fuerza laboral con educación avanzada")$Indicador),
+                                          choices = unique(filter(Ciencia, !(Indicador %in% c("Proporción de la fuerza laboral con educación avanzada", "Puntaje de Fuga de Cerebros y Éxodo Humano", "Porcentaje de la poblacion con acceso conveniente al transporte público", "Asequibilidad de la canasta básica digital.", "Empresas de IA , países América Latina y el Caribe, 2023", "Empresas unicornio, países América Latina y el Caribe, 2023", "Trámites gubernamentales disponibles en línea por país, países seleccionados América Latina y el Caribe, 2023")))$Indicador),
                                           selected = unique(Ciencia$Indicador)[1])),
                        column(5,
-                              sliderTextInput(inputId = "mapa_ciencia_anio",
-                                              label = "Año",
-                                              grid = T,
-                                              choices = sort(unique(Ciencia$Año)),
-                                              selected = max(filter(Ciencia, Indicador == unique(Ciencia$Indicador)[1])$Año),
-                                              animate = animationOptions(
-                                                interval = 600,
-                                                loop = FALSE,
-                                                playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
-                                                pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
-                              ))),
+                              pickerInput(inputId = "indicador_mapa_ciencia",
+                                          label = "Indicador",
+                                          choices = c("Puntaje de Fuga de Cerebros y Éxodo Humano", "Porcentaje de la poblacion con acceso conveniente al transporte público", "Asequibilidad de la canasta básica digital.", "Empresas de IA", "Empresas unicornio", "Trámites gubernamentales disponibles en línea por país"),
+                                          selected = unique(Ciencia$Indicador)[1]))),
               
               fluidRow(
                 column(7,
@@ -1032,12 +1048,31 @@ ui <- dashboardPage(
                 )
               ),
               
-              accordion(
-                id = "acordion_ciencia",
-                accordionItem(
-                  title = "Descripción del indicador",
-                  collapsed = F,
-                  textOutput("descripcion_indicador_ciencia")
+              fluidRow(
+                column(7,
+                       
+                       accordion(
+                         id = "acordion_ciencia",
+                         accordionItem(
+                           title = "Descripción del indicador",
+                           collapsed = F,
+                           textOutput("descripcion_indicador_ciencia")
+                         )
+                       )
+                       
+                       ),
+                
+                column(5,
+                       
+                       accordion(
+                         id = "acordion_mapa_ciencia",
+                         accordionItem(
+                           title = "Descripción del indicador",
+                           collapsed = F,
+                           textOutput("descripcion_indicador_mapa_ciencia")
+                         )
+                       )
+                       
                 )
               )
               
@@ -1109,7 +1144,7 @@ ui <- dashboardPage(
                  pickerInput(inputId = "indicador_vida",
                              label = "Indicador",
                              choices = c("Población, total",
-                                         "Esperanza de vida al nacer, según sexo",
+                                         "Esperanza de vida al nacer",
                                          "Tasa bruta de natalidad",
                                         "Índice de pobreza multidimensional",
                                         "Población de refugiados por país o territorio de asilo"))
@@ -1700,21 +1735,24 @@ server <- function(input, output, session) {
   
   ### Mapa ---------------------
   
-  # Actualizador de la barra para seleccionar año
-  observeEvent(input$indicador_ciencia, {
-    base_datos <- Ciencia
-
-    updateSliderTextInput(
-      session = session,
-      inputId = "mapa_ciencia_anio",
-      choices = sort(unique(filter(base_datos, Indicador == input$indicador_ciencia)$Año)),
-      selected = max(unique(filter(base_datos, Indicador == input$indicador_ciencia)$Año))
-    )
-  })
   
   output$mapa_ciencia <- renderLeaflet({
    
-    graf_mapa(ciencia_educacion, input$indicador_ciencia, input$mapa_ciencia_anio)
+    if (input$indicador_mapa_ciencia == "Puntaje de Fuga de Cerebros y Éxodo Humano") {
+      anio <- 2022
+    } else if (input$indicador_mapa_ciencia =="Porcentaje de la poblacion con acceso conveniente al transporte público") {
+      anio <- 2020
+    } else {
+      anio <- 2023
+      }
+    
+    if (anio == 2023) {
+      indicador <- filter(ciencia_educacion, str_detect(Indicador, input$indicador_mapa_ciencia))$Indicador[1]
+      graf_mapa(ciencia_educacion, indicador, anio)
+    } else {
+      graf_mapa(ciencia_educacion, input$indicador_mapa_ciencia, anio)
+    }
+    
     
   })
   
@@ -1722,6 +1760,10 @@ server <- function(input, output, session) {
   
   output$descripcion_indicador_ciencia <- renderText({
     filter(Ciencia, Indicador == input$indicador_ciencia)$Descripción[1]
+  })
+  
+  output$descripcion_indicador_mapa_ciencia <- renderText({
+    filter(ciencia_educacion, str_detect(Indicador, input$indicador_mapa_ciencia))$Descripción[1]
   })
   
   ### Historia acordion -----------------
@@ -1900,6 +1942,13 @@ server <- function(input, output, session) {
         ylab(label = "Población total (millones)")
       
       ggplotly(graf, tooltip = c("Año", "Valor", "color"))
+    } else if (input$indicador_vida == "Esperanza de vida al nacer") {
+      
+      graf = graf_evolutivo(vida_poblacion,"Esperanza de vida al nacer, según sexo")+
+        ylab(label = "Esperanza de vida al nacer")
+      
+      ggplotly(graf, tooltip = c("Año", "Valor", "color"))
+      
     } else {
       graf = graf_evolutivo(vida_poblacion, input$indicador_vida)
       
@@ -1913,7 +1962,12 @@ server <- function(input, output, session) {
   ### Descripcion acordion -----------------
   
   output$descripcion_indicador_vida <- renderText({
-    filter(vida_poblacion, Indicador == input$indicador_vida)$Descripción[1]
+    if(input$indicador_vida == "Esperanza de vida al nacer") {
+      filter(vida_poblacion, Indicador == "Esperanza de vida al nacer, según sexo")$Descripción[1]
+    } else {
+      filter(vida_poblacion, Indicador == input$indicador_vida)$Descripción[1]
+    }
+    
   })
   
   ### Piramide poblacional ---------------------
@@ -2256,7 +2310,12 @@ server <- function(input, output, session) {
   })
   
   output$des_lollipop_economia <- renderText({
-    filter(Economia, str_detect(Indicador,input$indicador_economia_lollipop))$Descripción[1]
+    
+    if (input$indicador_economia_lollipop == "Tasa de participación en la fuerza laboral") {
+      "Porcentaje en la participación laboral de cada sexo"
+    } else {
+      filter(Economia, str_detect(Indicador,input$indicador_economia_lollipop))$Descripción[1]
+    }
   })
   
   output$des_barras_economia <- renderText({
@@ -2581,13 +2640,14 @@ shinyApp(ui = ui, server = server)
 
 # Opcion de crear tu propio grafico
 
+# Agregar indicadores?
+
+# Agregar la esperanza de vida segun sexo
+
+# Componentes principales opcion cambiar de año
 
 # Arreglar-------------
 
 # Data en hover me tira la info de la recta tmb, evitando que pueda comparar mas paises
 
 # En los graficos de semidona el valor de referencia es el año anterior, estaria bueno que sea el ultimo valor anotado
-
-# Arreglar descripciones Economia
-
-# Agregar FUENTES
