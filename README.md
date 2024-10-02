@@ -23,7 +23,7 @@ Para navegar de sección a sección se puede utilizar el panel lateral desplegab
 
 ## Gráficos
 
-Los graficos fueron realizados en su mayoría con la librería [plotly](https://plotly.com/r/). Plotly permite (de izquierda a derecha):
+Los gráficos fueron realizados en su mayoría con la librería [plotly](https://plotly.com/r/). Plotly permite (de izquierda a derecha):
 
 ![](App/www/imgs/botones.png)
 
