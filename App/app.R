@@ -79,26 +79,29 @@ gasto_investigacion <- read.csv("www/Datos/Gasto en investigacion.csv") |>
 
 # Carga de datos https://statistics.cepal.org/portal/databank ------------------
 
-mod_cepal <- function(data) {
-  data |> 
+mod_cepal <- function(data, seleccion = T) {
+  data <- data |> 
     rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
     mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
                             str_detect(Pais, "Bolivia") ~ "Bolivia",
                             T ~ Pais),
            Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
            Año = as.numeric(Año),
-           Indicator = Indicador) |> 
-    select(Indicador, Pais, Año, Valor, Codigo, Indicator)
+           Indicator = Indicador) 
+  
+  if (seleccion) {
+    data <- data |> 
+      select(Indicador, Pais, Año, Valor, Codigo, Indicator)
+    return(data)
+  } else {
+    return(data)
+  }
+  
 }
 
 poblacion_edad <- read_xlsx("www/Datos/Poblacion edad.xlsx") |> 
-  rename(Indicador = indicator, Pais = País__ESTANDAR,Año = Años__ESTANDAR, Valor = value) |> 
-  mutate(Pais = case_when(str_detect(Pais, "Venezuela") ~ "Venezuela",
-                          str_detect(Pais, "Bolivia") ~ "Bolivia",
-                          T ~ Pais),
-         Codigo = str_to_upper(str_sub(Pais, start = 1, end = 3)),
-         Año = as.numeric(Año), 
-         Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.")
+  mod_cepal(seleccion = F) |> 
+  mutate(Descripción = "Número de habitantes por grupos quinquenales de edad que viven efectivamente dentro de los límites fronterizos de un país, territorio o área determinada.")
 
 esperanza_vida <- read_xlsx("www/Datos/Esperanza de vida.xlsx") |> 
   filter(Sexo == "Ambos sexos") |> 
@@ -125,6 +128,17 @@ canasta_digital <- read_xlsx("www/Datos/Canasta digital.xlsx") |>
   mod_cepal() |> 
   mutate(Descripción = "La canasta básica digital está compuesta por los servicios de banda ancha fija y móvil y un smartphone, un computador y una tablet. Para el cálculo, se usa la tarifa mensual de los servicios de banda ancha, el prorrateo mensual del costo de los dispositivos (suponiendo una vida útil de 3 años) y el ingreso mensual promedio de los hogares.")
 
+pobreza_categorizada <- read_excel("www/Datos/Pobreza_categorizada.xlsx") |> 
+  mod_cepal(seleccion = F) |> 
+  mutate(Descripción = "Porcentaje de personas de 25 y más años de edad cuyo ingreso per cápita medio está por debajo de las líneas de pobreza y pobreza extrema respectivamente, según  su nivel educativo máximo alcanzado por sexo.")
+
+valores_pobreza <- read_excel("www/Datos/Valores de pobreza.xlsx")|> 
+  mod_cepal(seleccion = F) |> 
+  mutate(Descripción = "La línea de pobreza extrema (indigencia) representa el monto mensual que requiere una persona para adquirir una canasta básica de alimentos que satisfaga sus requerimientos nutricionales. La línea de pobreza representa el monto mensual que una persona requiere para adquirir sus necesidades esenciales.")
+
+trabajadores_pobreza <- read_excel("www/Datos/Trabajadores_pobreza.xlsx")|> 
+  mod_cepal(seleccion = F) |> 
+  mutate(Descripción = "Porcentaje del total de la población ocupada cuyo ingreso per cápita medio está por debajo de la línea de pobreza e indigencia (extrema pobreza).")
 
 # Carga de traducciones ----------
 
@@ -760,14 +774,18 @@ graf_lollipop <- function(dataset, indicador, orden, anio) {
   
   if (orden == "Máximo valor") {
     level <- unique(arrange(data_lollipop, desc(Valor))$Pais)
-  } else {
+  } else if (orden == "Máxima diferencia") {
     level <- data_lollipop |> 
       group_by(Pais) |> 
       summarise(n = abs(diff(Valor))) |> 
       arrange(desc(n))
     level <- unique(level$Pais)
+  } else {
+    level <- unique(arrange(data_lollipop, Pais)$Pais)
   }
   
+  maximo <- max(filter(dataset, str_detect(Indicador, indicador))$Valor)
+  minimo <- min(filter(dataset, str_detect(Indicador, indicador))$Valor)
   
   graf_lollipop <- data_lollipop |> 
     mutate(Pais = factor(Pais, levels = rev(level))) |> 
@@ -778,7 +796,9 @@ graf_lollipop <- function(dataset, indicador, orden, anio) {
     scale_color_manual(values = set_names(c("#F1C8DB", "#41cadb"), c(filter(data_lollipop, str_detect(Indicador, "femeni"))$Indicador[1],
                                                                      filter(data_lollipop, str_detect(Indicador, "mascu"))$Indicador[1]))) +
     xlab(label = indicador) +
+    scale_x_continuous(limits = c(minimo, maximo)) +
     theme(legend.position = "none")
+  
   
   ggplotly(graf_lollipop, tooltip = c("y", "Valor", "Indicador"))
 }
@@ -798,7 +818,7 @@ graf_piramide <- function(pais, anio) {
   
   graf <- ggplot(data, aes(x = Edad, y = Valor, fill = Sexo)) +
     geom_bar(stat = "identity", position = "identity", width = 1) +
-    scale_y_continuous(labels = abs, limits = c((-1)*maximo, maximo)) +  # Mostrar números positivos en el eje y
+    scale_y_continuous(labels = abs, limits = c((-1)*maximo, maximo), breaks = c(floor(seq((-1)*maximo, 0, length.out = 5))+1, floor(seq(0, maximo, length.out = 5)))) +  # Mostrar números positivos en el eje y
     labs(x = "Edad", y = "Población (miles)") +
     scale_fill_manual(values = c("Mujeres" = "#F1C8DB", "Hombres" = "#41CADB")) +
     coord_flip()
@@ -1326,20 +1346,13 @@ ui <- dashboardPage(
         h2("Pobreza y ayudas sociales"),
         
         br(),
-        box(width = 12,
-            column(10, offset = 1,
-                   pickerInput(inputId = "indicador_barras_pobreza",
+        box(width = 6,
+            column(12,
+                   pickerInput(inputId = "indicador_barras_ayudas",
                                label = "Indicador",
                                choices = sort(c(
-                                 "Tasa de pobreza a $6.85 al día (PPP 2017), % de la población",
-                                 "Tasa de pobreza a $3.65 al día (PPP 2017), % de la población",
-                                 "Tasa de pobreza a $2.15 al día (PPP 2017), % de la población",
                                  "Gasto promedio per cápita en salud de bolsillo por hogar ($ 2011 PPP)",
-                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $5.50",
-                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $3.20",
-                                 "Cambio en la brecha de pobreza debido a gastos de salud de bolsillo ($ 2011 PPP), línea de pobreza de $1.90",
                                  "Proporción de la población mayor de edad para pensiones que recibe una pensión, total",
-                                 "Proporción de la población empujada por debajo de la línea de pobreza del 60% del consumo mediano por gastos de salud de bolsillo (%)",
                                  "Población cubierta por al menos un beneficio de protección social, total",
                                  "Personas Vulnerables Cubiertas por Asistencia Social, porcentaje",
                                  "Personas pobres cubiertas por sistemas de protección social, porcentaje",
@@ -1349,7 +1362,7 @@ ui <- dashboardPage(
                                  "Adecuación de los programas de protección social (porcentaje del bienestar total de los hogares beneficiarios)"
                                ))),
                    
-                   sliderTextInput(inputId = "anio_pobreza_barra",
+                   sliderTextInput(inputId = "anio_ayudas_barra",
                                    label = "Año",
                                    grid = T,
                                    choices = sort(unique(filter(Pobreza, Indicador =="Población cubierta por al menos un beneficio de protección social, total")$Año)),
@@ -1361,20 +1374,60 @@ ui <- dashboardPage(
                                      pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
                    ),
                    
-                   plotlyOutput("barras_pobreza"),
+                   plotlyOutput("barras_ayudas"),
                    
                    accordion(
-                     id = "acordion_barras_pobreza",
+                     id = "acordion_barras_ayudas",
                      accordionItem(
                        title = "Descripción del indicador",
                        collapsed = F,
-                       textOutput("des_barras_pobreza")
+                       textOutput("des_barras_ayudas")
                        ))
                    
                    )
             
             
-            )
+            ),
+        
+        box(width = 6,
+            
+            column(8,
+                   pickerInput(inputId = "indicador_barras_pobreza",
+                               label = "Indicador",
+                               choices = sort(c(
+                                 "Población en situación de pobreza extrema y pobreza, por nivel educativo máximo alcanzado y sexo",
+                                 "Población ocupada en situación de pobreza extrema y pobreza"
+                               )))),
+            column(4,
+                   pickerInput(inputId = "pais_pobreza_barra",
+                               label = "Indicador",
+                               choices = unique(pobreza_categorizada$Pais)
+                                 )
+                   ),
+                   
+                   sliderTextInput(inputId = "anio_pobreza_barra",
+                                   label = "Año",
+                                   grid = T,
+                                   choices = sort(unique(pobreza_categorizada$Año)),
+                                   selected = max(unique(pobreza_categorizada$Año)),
+                                   animate = animationOptions(
+                                     interval = 600,
+                                     loop = FALSE,
+                                     playButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-play", lib = "glyphicon")),
+                                     pauseButton = tags$button(class = "play-bttn", icon("glyphicon glyphicon-pause", lib = "glyphicon")))
+                   ),
+            
+            plotlyOutput("barras_pobreza"),
+            
+            accordion(
+              id = "acordion_barras_pobreza",
+              accordionItem(
+                title = "Descripción del indicador",
+                collapsed = F,
+                uiOutput("des_barras_pobreza")
+              ))
+                   
+                   )
         
       ),
       
@@ -1436,7 +1489,8 @@ ui <- dashboardPage(
                                label = "Orden",
                                choices = c(
                                  "Máximo valor",
-                                 "Máxima diferencia"
+                                 "Máxima diferencia",
+                                 "País"
                                ))),
             sliderTextInput(inputId = "anio_economia_lollipop",
                             label = "Año",
@@ -1642,6 +1696,13 @@ ui <- dashboardPage(
               CEPAL - Comisión Económica para América Latina y el Caribe: CELADE - División de Población de la CEPAL y Naciones Unidas, Departamento de Asuntos Económicos y Sociales, División de Población. (2024). <i> World Population Prospects, 2024, edición online </i>. 
 <a href='https://population.un.org/wpp/' target='_blank'> https://population.un.org/wpp/</a>
                 </li>
+                <li>
+                    Observatorio de Desarrollo Digital (ODD) sobre la base de prestadores del servicio de Internet seleccionados en cada país para las tarifas del los servicios de banda ancha, marketplaces seleccionados en cada país para el costo de los dispositivos y el Banco de Encuestas de Hogares (BADEHOG) para ingresos, CEPAL. (2022). <i> Asequibilidad de la canasta básica digital, trámites gubernamentales disponibles en línea por país, empresas de IA y empresas unicornio, países América Latina y el Caribe, 2023. </i> <a href='http://www.eclac.org/' target='_blank'> http://www.eclac.org/</a>
+                </li>  
+                <li>
+                    CEPAL - Comisión Económica para América Latina y el Caribe. (2023). <i> Valor de las líneas de pobreza extrema y pobreza; población ocupada en situación de pobreza extrema y pobreza, por área; población en situación de pobreza extrema y pobreza, por nivel educativo máximo alcanzado, sexo y área. </i> <a href='https://www.cepal.org/' target='_blank'> https://www.cepal.org/</a>
+                </li>  
+
                 <li>
              Programa de las Naciones Unidas para el Desarrollo. (s.f.). <i> América Latina y el Caribe: Data Futures Platform. Programa de las Naciones Unidas para el Desarrollo. </i>. <a href='https://data.undp.org/regions/latin-america-and-the-caribbean' target='_blank'> https://data.undp.org/regions/latin-america-and-the-caribbean</a>
                 </li>
@@ -2213,32 +2274,180 @@ server <- function(input, output, session) {
               maximo = "proporcion")
   })
   
-  ### Barras pobreza ---------------------
+  ### Barras Ayudas ---------------------
   
-  output$des_barras_pobreza <- renderText({
+  output$des_barras_ayudas <- renderText({
     
-    filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Descripción[1]
+    filter(Pobreza, Indicador == input$indicador_barras_ayudas)$Descripción[1]
     
   })
   
-  observeEvent(input$indicador_barras_pobreza, {
+  observeEvent(input$indicador_barras_ayudas, {
     
     base_datos <- Pobreza
     
     updateSliderTextInput(
       session = session,
-      inputId = "anio_pobreza_barra",
-      choices = sort(unique(filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Año)),
-      selected = max(unique(filter(Pobreza, Indicador == input$indicador_barras_pobreza)$Año))
+      inputId = "anio_ayudas_barra",
+      choices = sort(unique(filter(Pobreza, Indicador == input$indicador_barras_ayudas)$Año)),
+      selected = max(unique(filter(Pobreza, Indicador == input$indicador_barras_ayudas)$Año))
     )
     
   })
   
   
   
+  output$barras_ayudas <- renderPlotly({
+    
+    graf_bar(dataset = Pobreza,indicador = input$indicador_barras_ayudas,anio = input$anio_ayudas_barra)
+    
+  })
+  
+  ### Barras Pobreza ---------------------
+  
+  output$des_barras_pobreza <- renderUI({
+    
+    if (input$indicador_barras_pobreza== "Población en situación de pobreza extrema y pobreza, por nivel educativo máximo alcanzado y sexo") {
+      HTML(paste(pobreza_categorizada$Descripción[1], "<br> <br>", valores_pobreza$Descripción[1]))
+    } else {
+      HTML(paste(trabajadores_pobreza$Descripción[1], "<br> <br>", valores_pobreza$Descripción[1]))
+    }
+    
+  })
+  
+  observeEvent(list(input$indicador_barras_pobreza, input$pais_pobreza_barra), {
+    
+    if (input$indicador_barras_pobreza== "Población en situación de pobreza extrema y pobreza, por nivel educativo máximo alcanzado y sexo") {
+      updateSliderTextInput(
+        session = session,
+        inputId = "anio_pobreza_barra",
+        choices = sort(unique(filter(pobreza_categorizada, Pais == input$pais_pobreza_barra)$Año)),
+        selected = max(unique(filter(pobreza_categorizada, Pais == input$pais_pobreza_barra)$Año))
+      )
+    } else {
+      updateSliderTextInput(
+        session = session,
+        inputId = "anio_pobreza_barra",
+        choices = sort(unique(filter(trabajadores_pobreza)$Año)),
+        selected = max(unique(filter(trabajadores_pobreza)$Año))
+      )
+    }
+    
+    
+    
+  }, ignoreNULL = FALSE)
+  
+  
+  
   output$barras_pobreza <- renderPlotly({
     
-    graf_bar(dataset = Pobreza,indicador = input$indicador_barras_pobreza,anio = input$anio_pobreza_barra)
+    if (input$indicador_barras_pobreza == "Población en situación de pobreza extrema y pobreza, por nivel educativo máximo alcanzado y sexo") {
+      
+      graf <- pobreza_categorizada |> 
+        filter(Año == input$anio_pobreza_barra, Pais == input$pais_pobreza_barra, Sexo__ESTANDAR != "Ambos sexos", `Nivel educativo` != "Total nivel educativo", `Área geográfica` == "Urbana") |> 
+        mutate(`Nivel educativo` = factor(`Nivel educativo`, levels = c("Primaria incompleta", "Primaria completa", "Secundaria incompleta", "Secundaria completa", "Terciaria incompleta (incluye técnica terciaria)", "Terciaria completa")),
+               valor1 = case_when(`Pobreza extrema y pobreza` == "Pobreza" ~ Valor,
+                                  T ~ NA),
+               valor2 = case_when(`Pobreza extrema y pobreza` == "Pobreza extrema" ~ Valor,
+                                  T ~ NA),
+               "Sexo y condición económica" = case_when(Sexo__ESTANDAR == "Hombres" & `Pobreza extrema y pobreza` == "Pobreza" ~ "Hombres pobres",
+                                                        Sexo__ESTANDAR == "Hombres" & `Pobreza extrema y pobreza` == "Pobreza extrema" ~ "Hombres indigentes",
+                                                        Sexo__ESTANDAR == "Mujeres" & `Pobreza extrema y pobreza` == "Pobreza" ~ "Mujeres pobres",
+                                                        Sexo__ESTANDAR == "Mujeres" & `Pobreza extrema y pobreza` == "Pobreza extrema" ~ "Mujeres indigentes",
+                                                        T ~ "Error")
+        ) |> 
+        ggplot() +
+        aes(x = `Nivel educativo`, fill = `Sexo y condición económica`, group = Sexo__ESTANDAR, Porcentaje = Valor) +
+        geom_col(position = "dodge", aes(y = valor1)) +
+        geom_col(position = "dodge", aes(y = valor2)) +
+        scale_fill_manual(values = c("Hombres pobres" = "#41cadb", "Hombres indigentes" = "#219BAB", "Mujeres pobres" = "#F1C8DB", "Mujeres indigentes" = "#E28DB5")) +
+        ylab(label = "Población en situación de pobreza (%)") +
+        scale_y_continuous(limits = c(0,max(filter(pobreza_categorizada, Pais == input$pais_pobreza_barra, Sexo__ESTANDAR != "Ambos sexos", `Nivel educativo` != "Total nivel educativo", `Área geográfica` == "Urbana")$Valor))) +
+        guides(fill=guide_legend(ncol=2)) +
+        labs(fill = "") +
+        scale_x_discrete(labels = function(x) sub(" ", "\n", sub(" ", "\n", x))) +
+        theme(legend.position = "bottom")
+      
+      ggplotly(graf, tooltip = c("x", "fill", "Valor")) |> 
+        layout(hovermode = "x unified",
+               legend = list(
+                 orientation = 'h',   # Set legend to be horizontal
+                 x = 0.5,             # Center the legend horizontally
+                 xanchor = 'center',
+                 y = -0.3,            # Position the legend slightly below the plot
+                 yanchor = 'top'
+               ),
+               
+               annotations = list(
+                 list(
+                   x = 1,  # Posiciona en el extremo derecho del gráfico
+                   y = 0.95,  # Posiciona en la parte superior del gráfico
+                   xref = 'paper',  # Coordenadas relativas al gráfico
+                   yref = 'paper',
+                   text = paste0("Línea de indigencia: ", round(filter(valores_pobreza, Año == input$anio_pobreza_barra, Pais == input$pais_pobreza_barra, `Área geográfica` == "Urbana", `Tipo de línea de pobreza extrema y pobreza` == "Línea de pobreza extrema")$Valor, 2), " Dólares", "\n",
+                                 "Línea de pobreza: ", round(filter(valores_pobreza, Año == input$anio_pobreza_barra, Pais == input$pais_pobreza_barra, `Área geográfica` == "Urbana", `Tipo de línea de pobreza extrema y pobreza` == "Línea de pobreza")$Valor, 2), " Dólares"),
+                   showarrow = FALSE,
+                   xanchor = 'right',
+                   yanchor = 'top',
+                   align = "left",  # Evitar que el texto salga del cuadro
+                   font = list(size = 14, color = "#bcc3c7"),
+                   bgcolor = "#272c30",  # Fondo blanco con transparencia
+                   bordercolor = "#000000",
+                   borderwidth = 1
+                 )
+               )
+               )
+      
+    } else {
+      
+      valores <- filter(valores_pobreza,`Área geográfica` == "Urbana") |>  
+        select(Pais, Año, `Tipo de línea de pobreza extrema y pobreza`, Valor) |> 
+        pivot_wider(id_cols = c(Pais, Año),names_from = `Tipo de línea de pobreza extrema y pobreza`, values_from = Valor) |> 
+        mutate("Linea indigencia/pobreza" = paste0(round(`Línea de pobreza extrema`, 2), " / ", round(`Línea de pobreza`, 2), " Dólares")) |> 
+        select(Pais, Año, `Linea indigencia/pobreza`)
+      
+      
+      graf <- trabajadores_pobreza |> 
+        filter(Sexo__ESTANDAR != "Ambos sexos", `Área geográfica` == "Urbana") |> 
+        left_join(valores, by = c("Pais", "Año")) |> 
+        complete(Año = full_seq(Año, 1), Pais, Sexo__ESTANDAR, `Pobreza extrema y pobreza`) |>  
+        group_by(Pais, Sexo__ESTANDAR, `Pobreza extrema y pobreza`) |>
+        fill(Valor, `Linea indigencia/pobreza`, .direction = "down") |> 
+        ungroup() |> 
+        filter(Año == input$anio_pobreza_barra) |> 
+        mutate(valor1 = case_when(`Pobreza extrema y pobreza` == "Pobreza" ~ Valor,
+                                  T ~ NA),
+               valor2 = case_when(`Pobreza extrema y pobreza` == "Pobreza extrema" ~ Valor,
+                                  T ~ NA),
+               "Sexo y condición económica" = case_when(Sexo__ESTANDAR == "Hombres" & `Pobreza extrema y pobreza` == "Pobreza" ~ "Hombres pobres",
+                                                        Sexo__ESTANDAR == "Hombres" & `Pobreza extrema y pobreza` == "Pobreza extrema" ~ "Hombres indigentes",
+                                                        Sexo__ESTANDAR == "Mujeres" & `Pobreza extrema y pobreza` == "Pobreza" ~ "Mujeres pobres",
+                                                        Sexo__ESTANDAR == "Mujeres" & `Pobreza extrema y pobreza` == "Pobreza extrema" ~ "Mujeres indigentes",
+                                                        T ~ "Error")
+        ) |> 
+        ggplot() +
+        aes(x = Pais, fill = `Sexo y condición económica`, group = Sexo__ESTANDAR, Porcentaje = Valor) +
+        geom_point(aes(x = Pais, y = 0, text1 = Pais, text2 = `Linea indigencia/pobreza`), alpha = 0, inherit.aes = F) +
+        geom_col(position = "dodge", aes(y = valor1)) +
+        geom_col(position = "dodge", aes(y = valor2)) +
+        scale_fill_manual(values = c("Hombres pobres" = "#41cadb", "Hombres indigentes" = "#219BAB", "Mujeres pobres" = "#F1C8DB", "Mujeres indigentes" = "#E28DB5")) +
+        ylab(label = "Población en situación de pobreza (%)") +
+        scale_y_continuous(limits = c(0,max(filter(trabajadores_pobreza, Sexo__ESTANDAR != "Ambos sexos",`Área geográfica` == "Urbana")$Valor))) +
+        guides(fill=guide_legend(ncol=2)) +
+        labs(fill = "") +
+        theme(legend.position = "bottom")
+      
+      ggplotly(graf, tooltip = c("fill", "Valor", "text1", "text2")) |> 
+        layout(hovermode = "x unified",
+               legend = list(
+                 orientation = 'h',   # Set legend to be horizontal
+                 x = 0.5,             # Center the legend horizontally
+                 xanchor = 'center',
+                 y = -0.3,            # Position the legend slightly below the plot
+                 yanchor = 'top'
+               ))
+    }
+    
     
   })
   
@@ -2645,6 +2854,10 @@ shinyApp(ui = ui, server = server)
 # Agregar la esperanza de vida segun sexo
 
 # Componentes principales opcion cambiar de año
+
+# Agregar los nuevos indicadores al analisis de datos y a las bases de datos (poblacion y pobreza)
+
+# Agregar cambiar la velocidad con la que se cambia de año
 
 # Arreglar-------------
 
