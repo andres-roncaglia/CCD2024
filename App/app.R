@@ -140,6 +140,8 @@ trabajadores_pobreza <- read_excel("www/Datos/Trabajadores_pobreza.xlsx")|>
   mod_cepal(seleccion = F) |> 
   mutate(Descripción = "Porcentaje del total de la población ocupada cuyo ingreso per cápita medio está por debajo de la línea de pobreza e indigencia (extrema pobreza).")
 
+pobreza_cepal <- bind_rows(pobreza_categorizada, valores_pobreza, trabajadores_pobreza)
+
 # Carga de traducciones ----------
 
 Traducciones <- read_xlsx("www/Datos/Traducciones variables.xlsx")
@@ -1670,7 +1672,7 @@ ui <- dashboardPage(
                      pickerInput(
                        inputId = "base_datos",
                        label = "Seleccionar Base de datos", 
-                       choices = c("Desarrollo y educación", "Vida y población", "Economía y trabajo")
+                       choices = c("Desarrollo y educación", "Vida y población", "Economía y trabajo", "Población por cuantiles", "Pobreza")
                        )
                      ),
               column(2,
@@ -2796,6 +2798,10 @@ server <- function(input, output, session) {
         
       } else if  (input$base_datos == "Economía y trabajo") {
         economia_trabajo
+      } else if  (input$base_datos == "Población por cuantiles") {
+        poblacion_edad
+      } else if  (input$base_datos == "Pobreza") {
+        pobreza_cepal
       } else {ciencia_educacion}
     } 
     
@@ -2825,6 +2831,10 @@ server <- function(input, output, session) {
         
       } else if  (input$base_datos == "Economía y trabajo") {
         datos <- economia_trabajo
+      } else if  (input$base_datos == "Población por cuantiles") {
+        datos <- poblacion_edad |> select(-unit, -notes_ids, -source_id) |> select(Pais, Codigo, Indicador, Año, Valor, Descripción, everything())
+      } else if  (input$base_datos == "Pobreza") {
+        datos <- pobreza_cepal |> filter(`Área geográfica` == "Urbana") |> select(-unit ,-source_id, -notes_ids, -`Área geográfica`)|> select(Pais, Codigo, Indicador, Año, Valor, Descripción, everything())
       } else {datos <- ciencia_educacion}
     }
     datos %>% 
@@ -2832,7 +2842,12 @@ server <- function(input, output, session) {
                                                               scrollY = "450px",
                                                               paging = F,
                                                               scrollCollapse = T,
-                                                              lengthMenu = c(10, 15, 30, nrow(datos))
+                                                              lengthMenu = c(10, 15, 30, nrow(datos)),
+                                                              columnDefs = list(
+                                                                list(width = '50px', targets = c(1,2,4)),
+                                                                list(width = '20px', targets = 0),
+                                                                list(width = '1800px', targets = c(3,6))
+                                                              )
                                                               ))
     })
   
@@ -2854,8 +2869,6 @@ shinyApp(ui = ui, server = server)
 # Agregar la esperanza de vida segun sexo
 
 # Componentes principales opcion cambiar de año
-
-# Agregar los nuevos indicadores al analisis de datos y a las bases de datos (poblacion y pobreza)
 
 # Agregar cambiar la velocidad con la que se cambia de año
 
