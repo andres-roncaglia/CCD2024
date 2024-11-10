@@ -378,7 +378,7 @@ mapa <- datos_mapa |>
   addTiles() |> 
   setMaxBounds(lng1 = -22, lng2 = -98, lat1 = -61, lat2 = 20) |> 
   setView(lng = -58, lat = -23, zoom = 2.6) |> 
-  addProviderTiles("Stadia.AlidadeSmoothDark")
+  addProviderTiles("Stadia.AlidadeSmoothDark", options = providerTileOptions(apiKey = "d1d22c35-1739-4e51-b74f-03743b030beb"))
 
 # Graficos --------------------
 
