@@ -1,10 +1,10 @@
-name: CCD-2024
+name: ccd2024
 title:
 username: bcdhu4-andres-roncaglia
 account: bcdhu4-andres-roncaglia
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
-appId: 12702330
-bundleId: 9340702
-url: https://bcdhu4-andres-roncaglia.shinyapps.io/CCD-2024/
+appId: 13288821
+bundleId: 9340685
+url: https://bcdhu4-andres-roncaglia.shinyapps.io/ccd2024/
 version: 1
